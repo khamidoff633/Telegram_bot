@@ -8,7 +8,7 @@ from aiohttp import web, ClientSession
 
 from config import BOT_TOKEN
 from database.db import init_db
-from handlers.start import router as start_router
+from handlers.start import start_router
 from handlers.downloader_handler import router as downloader_router
 from handlers.voice_handler import router as voice_router
 from handlers.admin_handler import router as admin_router
