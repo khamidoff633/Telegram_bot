@@ -1,0 +1,24 @@
+type: service
+name: voxmedia-bot
+app: voxmedia-app
+service:
+  definition:
+    type: worker
+    name: voxmedia-bot
+    env:
+      - key: BOT_TOKEN
+        value: 8960958879:AAHsh6B87TfHxNOKTelgmTNS-YQGN-BzA38
+      - key: ADMIN_USERNAME
+        value: bakhridd1n_dev
+      - key: GEMINI_API_KEY
+        value: AIzaSyDVVadyTpzR0ngfjYy0hu9i1BTpMcxaS0A
+      - key: INSTAGRAM_COOKIE
+        value: 64038875765%3AjJBWexi3Q58QSQ%3A11%3AAYguExhPlWtYNZ2i0blrmkQ8GqdmQiW8VqXPrijXYQ
+      - key: REQUIRED_CHANNEL
+        value: "@backend_dev1"
+    docker:
+      dockerfile: Dockerfile
+    instance_types:
+      - eco-micro
+    regions:
+      - fra
