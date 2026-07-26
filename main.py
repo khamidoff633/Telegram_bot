@@ -21,15 +21,18 @@ async def handle_health_check(request):
     return web.Response(text="VoxMedia AI Bot is 24/7 Active!", status=200)
 
 async def start_health_server():
-    app = web.Application()
-    app.router.add_get('/', handle_health_check)
-    app.router.add_get('/health', handle_health_check)
-    port = int(os.environ.get("PORT", 8080))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    logging.info(f"🚀 Health Check HTTP server running on port {port}")
+    try:
+        app = web.Application()
+        app.router.add_get('/', handle_health_check)
+        app.router.add_get('/health', handle_health_check)
+        port = int(os.environ.get("PORT", 8080))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
+        logging.info(f"🚀 Health Check HTTP server running on port {port}")
+    except Exception as e:
+        logging.warning(f"⚠️ Health Check HTTP server start skipped (port in use or local env): {e}")
 
 # 2. Automatic Self-Ping Task (Har 10 daqiqada o'z-o'zini uyg'otib turuvchi avto-ping)
 async def auto_self_ping():
