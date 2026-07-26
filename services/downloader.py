@@ -16,8 +16,17 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
 ]
 
+def ensure_cookies_file():
+    if INSTAGRAM_COOKIE and not os.path.exists(COOKIE_FILE_PATH):
+        cookie_content = (
+            "# Netscape HTTP Cookie File\n"
+            ".instagram.com\tTRUE\t/\tTRUE\t2147483647\tsessionid\t" + INSTAGRAM_COOKIE + "\n"
+        )
+        with open(COOKIE_FILE_PATH, "w") as f:
+            f.write(cookie_content)
+
 def _download_instagram_direct(url: str) -> str:
-    """Instagram Reels / Posts uchun maxsus to'g'ridan-to'g'ri scraping usuli"""
+    """Instagram Reels / Posts uchun maxsus scraping usuli"""
     match = re.search(r'/(?:reel|p|tv)/([A-Za-z0-9_-]+)', url)
     if not match:
         return None
@@ -26,77 +35,57 @@ def _download_instagram_direct(url: str) -> str:
     headers = {
         'User-Agent': USER_AGENTS[0],
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
     }
 
     if INSTAGRAM_COOKIE:
         headers['Cookie'] = f"sessionid={INSTAGRAM_COOKIE}"
 
-    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/"
-    try:
-        res = requests.get(embed_url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            video_matches = re.findall(r'\"video_url\":\"(.*?)\"', res.text)
-            if not video_matches:
-                video_matches = re.findall(r'<video[^>]+src=\"(.*?)\"', res.text)
-            
-            if video_matches:
-                video_url = video_matches[0].replace('\\u0026', '&').replace('\\/', '/')
-                file_id = str(uuid.uuid4())[:8]
-                file_path = os.path.join(DOWNLOAD_DIR, f"insta_{shortcode}_{file_id}.mp4")
+    embed_urls = [
+        f"https://www.instagram.com/p/{shortcode}/embed/",
+        f"https://www.instagram.com/p/{shortcode}/embed/captioned/",
+    ]
 
-                v_res = requests.get(video_url, headers=headers, stream=True, timeout=25)
-                if v_res.status_code == 200:
-                    with open(file_path, 'wb') as f:
-                        for chunk in v_res.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
-                        return file_path
-    except Exception as e:
-        print(f"Instagram Direct Scrape Error: {e}")
+    for embed_url in embed_urls:
+        try:
+            res = requests.get(embed_url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                video_matches = re.findall(r'\"video_url\":\"(.*?)\"', res.text)
+                if not video_matches:
+                    video_matches = re.findall(r'<video[^>]+src=\"(.*?)\"', res.text)
+                if not video_matches:
+                    video_matches = re.findall(r'https?://[^\s\"\']+\.mp4[^\s\"\']*', res.text)
+
+                if video_matches:
+                    video_url = video_matches[0].replace('\\u0026', '&').replace('\\/', '/')
+                    file_id = str(uuid.uuid4())[:8]
+                    file_path = os.path.join(DOWNLOAD_DIR, f"insta_{shortcode}_{file_id}.mp4")
+
+                    v_res = requests.get(video_url, headers=headers, stream=True, timeout=25)
+                    if v_res.status_code == 200:
+                        with open(file_path, 'wb') as f:
+                            for chunk in v_res.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                        if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
+                            return file_path
+        except Exception as e:
+            print(f"Instagram Direct Scrape Error: {e}")
 
     return None
 
 def _download_video_sync(url: str, is_vip: bool = False) -> dict:
-    """yt-dlp va Direct Scraper yordamida videolarni yuklash"""
+    ensure_cookies_file()
     file_id = str(uuid.uuid4())[:8]
-    output_template = os.path.join(DOWNLOAD_DIR, f"%(title).30s_{file_id}.%(ext)s")
+    output_template = os.path.join(DOWNLOAD_DIR, f"video_{file_id}.%(ext)s")
 
-    clean_url = url.split('?')[0] if ('instagram.com' in url or 'instagr.am' in url) else url
-
-    # Instagram bo'lsa avval Direct Scraper'ni sinaymiz
-    if 'instagram.com' in url or 'instagr.am' in url:
-        direct_path = _download_instagram_direct(clean_url)
-        if direct_path and os.path.exists(direct_path):
-            return {
-                'file_path': direct_path,
-                'title': 'Instagram Video',
-                'duration': 0,
-                'uploader': 'Instagram',
-                'ext': 'mp4'
-            }
-
-    # Format tanlovi
-    if is_vip:
-        format_spec = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-    else:
-        format_spec = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best"
-
-    headers = {
-        'User-Agent': USER_AGENTS[0],
-        'Accept': '*/*',
-    }
+    clean_url = url.split('?')[0] if '?' in url and ('instagram.com' in url or 'instagr.am' in url) else url
 
     ydl_opts = {
-        'format': format_spec,
+        'format': 'best',
         'outtmpl': output_template,
-        'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
-        'max_filesize': 50 * 1024 * 1024,
         'user_agent': USER_AGENTS[0],
-        'http_headers': headers,
-        'retries': 3,
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
     if os.path.exists(COOKIE_FILE_PATH):
@@ -114,38 +103,43 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
             return {
                 'file_path': filename,
                 'title': info.get('title', 'Media Video'),
-                'duration': info.get('duration', 0),
-                'uploader': info.get('uploader', 'Media'),
-                'ext': 'mp4'
+                'uploader': info.get('uploader', 'VoxMedia Video'),
             }
-    except Exception as first_err:
-        print(f"yt-dlp birinchi xato: {first_err}. Fallback usul o'tkazilmoqda...")
-        
-        fallback_opts = {
-            'format': 'best',
-            'outtmpl': output_template,
-            'quiet': True,
-            'user_agent': USER_AGENTS[0],
-            'http_headers': headers,
-        }
-        if os.path.exists(COOKIE_FILE_PATH):
-            fallback_opts['cookiefile'] = COOKIE_FILE_PATH
+    except Exception as e:
+        print(f"yt-dlp birinchi xato: {e}. Fallback usul o'tkazilmoqda...")
 
-        with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+    # Direct Instagram scraper fallback
+    if 'instagram.com' in url or 'instagr.am' in url:
+        direct_path = _download_instagram_direct(clean_url)
+        if direct_path and os.path.exists(direct_path):
+            return {
+                'file_path': direct_path,
+                'title': 'Instagram Reel',
+                'uploader': 'VoxMedia Video',
+            }
+
+    # Zaxiradagi format variantlari
+    ydl_opts_fallback = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_template,
+        'quiet': True,
+        'no_warnings': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
             info = ydl.extract_info(clean_url, download=True)
             filename = ydl.prepare_filename(info)
-            base, _ = os.path.splitext(filename)
-            mp4_filename = base + ".mp4"
-            if os.path.exists(mp4_filename):
-                filename = mp4_filename
-
             return {
                 'file_path': filename,
                 'title': info.get('title', 'Media Video'),
-                'duration': info.get('duration', 0),
-                'uploader': info.get('uploader', 'Media'),
-                'ext': 'mp4'
+                'uploader': info.get('uploader', 'VoxMedia Video'),
             }
+    except Exception as fallback_e:
+        print(f"yt-dlp zaxira xatosi: {fallback_e}")
+
+    raise Exception("Videoni yuklab bo'lmadi.")
 
 async def download_video(url: str, is_vip: bool = False) -> dict:
     loop = asyncio.get_event_loop()
