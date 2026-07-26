@@ -27,8 +27,8 @@ MANDATORY_SUB_TEXT = (
 )
 
 def clean_song_name(name: str) -> str:
-    """Fayl va trek nomidagi ortiqcha _8fb4a8dc.mp4 kabi UUID va kengaytmalarni tozalash"""
-    if not name:
+    """Instagram usernames (Video by ...), UUID and format extensions cleanup"""
+    if not name or "Video by" in name or "instagram" in name.lower():
         return "Original Sound"
     cleaned = re.sub(r'_[a-f0-9]{8}\.(?:mp4|mp3|m4a)$', '', name, flags=re.IGNORECASE)
     cleaned = re.sub(r'\.(?:mp4|mp3|m4a)$', '', cleaned, flags=re.IGNORECASE)
@@ -39,13 +39,14 @@ async def handle_video_download(message: Message):
     telegram_id = message.from_user.id
     url = message.text.strip()
 
-    # 1. Limit tekshiruvi
-    can_download, remains, user = await can_user_download_video(telegram_id)
-
-    # 2. Majburiy obuna tekshiruvi
-    if not await check_user_subscription(message.bot, telegram_id) and not user.is_vip:
+    # 1. Majburiy obuna tekshiruvi (Hamma foydalanuvchilar uchun majburiy)
+    is_subscribed = await check_user_subscription(message.bot, telegram_id)
+    if not is_subscribed:
         await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
         return
+
+    # 2. Limit tekshiruvi
+    can_download, remains, user = await can_user_download_video(telegram_id)
 
     if not can_download and not user.is_vip:
         alert_text = (
@@ -64,7 +65,6 @@ async def handle_video_download(message: Message):
         file_path = result['file_path']
         raw_title = result.get('title', 'Media Video')
         safe_title = html.escape(clean_song_name(raw_title))
-        uploader = html.escape(result.get('uploader', 'VoxMedia Audio'))
 
         if not os.path.exists(file_path):
             await status_msg.edit_text(
@@ -77,29 +77,21 @@ async def handle_video_download(message: Message):
         video_file = FSInputFile(file_path)
 
         if user.is_vip:
-            caption = f"🎬 <b>{safe_title}</b>\n\n⚡ <i>VIP foydalanuvchi uchun maksimal HD sifatda yuklandi!</i>"
-            await message.answer_video(video=video_file, caption=caption, parse_mode="HTML")
+            await message.answer_video(video=video_file, caption=None)
         else:
-            caption = (
-                f"🎬 <b>{safe_title}</b>\n\n"
-                f"ℹ️ <i>Sizga 480p formatda yuklandi.</i>\n"
-                f"✨ <b>Sifatli (HD 1080p) videolarni yuklash va cheksiz foydalanish uchun obuna bo'ling!</b>"
-            )
             await message.answer_video(
                 video=video_file, 
-                caption=caption, 
-                reply_markup=get_subscribe_inline_kb(url=url), 
-                parse_mode="HTML"
+                caption=None, 
+                reply_markup=get_subscribe_inline_kb(url=url)
             )
-            # Limitni 1 taga oshirish
             await increment_video_count(telegram_id)
 
-        # 2-Qadam: AI yordamida videodagi musiqaning TO'LIQ (ORIGINAL 3+ MINUTE) MP3 versiyasini topib yuborish!
+        # 2-Qadam: AI yordamida musiqaning TO'LIQ (ORIGINAL 3+ MINUTE) MP3 versiyasini topib yuborish!
         try:
             temp_mp3 = extract_audio_from_local_file(file_path)
             audio_to_send = None
             final_title = safe_title
-            final_artist = uploader
+            final_artist = "VoxMedia AI"
 
             if temp_mp3 and os.path.exists(temp_mp3):
                 # AI orqali asl muallif va qo'shiq nomini aniqlash (Gemini AI)
@@ -115,7 +107,7 @@ async def handle_video_download(message: Message):
                     if full_song_data and os.path.exists(full_song_data['file_path']):
                         audio_to_send = full_song_data['file_path']
 
-            # Agar to'liq versiya topilmasa, videoning o'zidagi kesilgan audioni yuborish
+            # Agar to'liq versiya topilmasa, videoning o'zidagi audioni yuborish
             if not audio_to_send or not os.path.exists(audio_to_send):
                 audio_to_send = temp_mp3
 
@@ -124,7 +116,8 @@ async def handle_video_download(message: Message):
                 await message.answer_audio(
                     audio=audio_file,
                     title=final_title,
-                    performer=final_artist
+                    performer=final_artist,
+                    caption=None
                 )
 
                 # Temp audio fayllarini o'chirish
@@ -158,16 +151,16 @@ async def handle_extract_music(callback: CallbackQuery):
     try:
         result = await extract_audio_from_url(url)
         file_path = result['file_path']
-        raw_title = result.get('title', 'Musiqa')
+        raw_title = result.get('title', 'Original Sound')
         safe_title = html.escape(clean_song_name(raw_title))
-        uploader = html.escape(result.get('uploader', 'VoxMedia Audio'))
 
         if os.path.exists(file_path):
             audio_file = FSInputFile(file_path)
             await callback.message.answer_audio(
                 audio=audio_file,
                 title=safe_title,
-                performer=uploader
+                performer="VoxMedia AI",
+                caption=None
             )
             await status_msg.delete()
             os.remove(file_path)

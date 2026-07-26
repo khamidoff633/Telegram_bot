@@ -83,45 +83,51 @@ async def identify_original_song(file_path: str) -> dict:
     return None
 
 def _download_full_original_song_sync(artist: str, title: str) -> dict:
-    """YouTube search (Android/iOS API) orqali musiqaning to'liq (3-4 daqiqalik) original audio versiyasini yuklab olish"""
-    query = f"ytsearch1:{artist} {title} audio"
-    file_id = str(uuid.uuid4())[:8]
-    output_template = os.path.join(DOWNLOAD_DIR, f"full_{file_id}.%(ext)s")
+    """YouTube Android/iOS Engine orqali musiqaning to'liq (3-4 daqiqalik) original MP3 versiyasini yuklab olish"""
+    queries = [
+        f"ytsearch1:{artist} {title} official audio",
+        f"ytsearch1:{artist} {title} original audio",
+        f"ytsearch1:{artist} {title}",
+    ]
 
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': output_template,
-        'quiet': True,
-        'no_warnings': True,
-        'user_agent': USER_AGENTS[0],
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
-    }
+    for query in queries:
+        file_id = str(uuid.uuid4())[:8]
+        output_template = os.path.join(DOWNLOAD_DIR, f"full_{file_id}.%(ext)s")
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=True)
-            if 'entries' in info and info['entries']:
-                info = info['entries'][0]
-            filename = ydl.prepare_filename(info)
-            base, _ = os.path.splitext(filename)
-            mp4_filename = base + ".mp4"
-            if os.path.exists(mp4_filename):
-                filename = mp4_filename
+        ydl_opts = {
+            'format': 'best',
+            'outtmpl': output_template,
+            'quiet': True,
+            'no_warnings': True,
+            'user_agent': USER_AGENTS[0],
+            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+        }
 
-            # Audio trekni MP3 ga o'girish
-            mp3_path = extract_audio_from_local_file(filename)
-            if os.path.exists(filename) and filename != mp3_path:
-                os.remove(filename)
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(query, download=True)
+                if 'entries' in info and info['entries']:
+                    info = info['entries'][0]
+                filename = ydl.prepare_filename(info)
+                base, _ = os.path.splitext(filename)
+                mp4_filename = base + ".mp4"
+                if os.path.exists(mp4_filename):
+                    filename = mp4_filename
 
-            print(f"✅ TO'LIQ ORIGINAL MUSIQA YUKLANDI: {title} - {artist} ({info.get('duration')} sec)")
-            return {
-                'file_path': mp3_path,
-                'title': title,
-                'performer': artist,
-                'duration': info.get('duration', 0)
-            }
-    except Exception as e:
-        print(f"Full song download error: {e}")
+                # Audio trekni MP3 ga o'girish
+                mp3_path = extract_audio_from_local_file(filename)
+                if os.path.exists(filename) and filename != mp3_path:
+                    os.remove(filename)
+
+                print(f"✅ TO'LIQ ORIGINAL MUSIQA YUKLANDI: {title} - {artist} ({info.get('duration')} sec)")
+                return {
+                    'file_path': mp3_path,
+                    'title': title,
+                    'performer': artist,
+                    'duration': info.get('duration', 0)
+                }
+        except Exception as e:
+            print(f"Full song download attempt for '{query}' error: {e}")
 
     return None
 
@@ -146,8 +152,8 @@ def _extract_audio_sync(url: str) -> dict:
             filename = ydl.prepare_filename(info)
             return {
                 'file_path': filename,
-                'title': info.get('title', 'Musiqa'),
-                'uploader': info.get('uploader', 'Audio Track'),
+                'title': info.get('title', 'Original Audio'),
+                'uploader': 'VoxMedia AI',
             }
     except Exception as e:
         print(f"Audio extract error: {e}")
