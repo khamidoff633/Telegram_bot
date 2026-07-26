@@ -4,7 +4,7 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiohttp import web
+from aiohttp import web, ClientSession
 
 from config import BOT_TOKEN
 from database.db import init_db
@@ -16,7 +16,7 @@ from handlers.payment_handler import router as payment_router
 
 logging.basicConfig(level=logging.INFO)
 
-# Lightweight Health Check Server for Render Free Web Service (Prevents Sleeping)
+# 1. Health-Check HTTP server for Render Free Web Service
 async def handle_health_check(request):
     return web.Response(text="VoxMedia AI Bot is 24/7 Active!", status=200)
 
@@ -31,22 +31,37 @@ async def start_health_server():
     await site.start()
     logging.info(f"🚀 Health Check HTTP server running on port {port}")
 
+# 2. Automatic Self-Ping Task (Har 10 daqiqada o'z-o'zini uyg'otib turuvchi avto-ping)
+async def auto_self_ping():
+    await asyncio.sleep(15)  # Server to'liq ishga tushishini kutish
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_url:
+        logging.info(f"⚡ 24/7 Auto-Ping (0-Sleep) tizimi ishga tushdi: {render_url}")
+        async with ClientSession() as session:
+            while True:
+                try:
+                    async with session.get(f"{render_url}/health", timeout=10) as resp:
+                        logging.info(f"🟢 Auto-ping status: {resp.status} (Server 24/7 faol!)")
+                except Exception as e:
+                    logging.warning(f"⚠️ Auto-ping ogohlantirish: {e}")
+                await asyncio.sleep(600)  # Har 10 daqiqada ping yuboriladi
+
 async def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN ko'rsatilmagan! .env faylni tekshiring.")
 
-    # 1. Ma'lumotlar bazasini ishga tushirish
+    # Ma'lumotlar bazasini ishga tushirish
     await init_db()
     print("✅ Ma'lumotlar bazasi tayyorlandi!")
 
-    # 2. Bot va Dispatcher obyektlarini yaratish
+    # Bot va Dispatcher obyektlarini yaratish
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()
 
-    # 3. Handler (Router) larni ro'yxatdan o'tkazish
+    # Routerlarni biriktirish
     dp.include_router(start_router)
     dp.include_router(downloader_router)
     dp.include_router(voice_router)
@@ -55,8 +70,9 @@ async def main():
 
     print("🚀 Telegram Bot muvaffaqiyatli ishga tushdi va buyruqlarni kutmoqda...")
 
-    # 4. Health-check HTTP server va Bot polling-ni birga ishga tushirish
+    # HTTP server, Auto-ping hamda Bot Polling-ni birgalikda ishga tushirish
     await start_health_server()
+    asyncio.create_task(auto_self_ping())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
