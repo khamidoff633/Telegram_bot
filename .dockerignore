@@ -1,0 +1,7 @@
+venv/
+downloads/
+voice_downloads/
+bot_database.sqlite
+.git
+__pycache__/
+*.pyc

@@ -1,0 +1,10 @@
+.env
+venv/
+downloads/
+voice_downloads/
+bot_database.sqlite
+__pycache__/
+*.pyc
+*.html
+*.png
+*.jpg
