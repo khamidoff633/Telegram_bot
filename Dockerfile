@@ -19,6 +19,9 @@ COPY . .
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
+
+EXPOSE 8080
 
 # Command to run the Telegram bot
 CMD ["python", "main.py"]
