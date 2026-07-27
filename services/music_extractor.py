@@ -33,7 +33,7 @@ def extract_audio_from_local_file(video_path: str) -> str:
     return video_path
 
 async def identify_original_song(file_path: str) -> dict:
-    """Gemini 2.5 AI yordamida audiodan musiqaning va qo'shiqchining asl original nomini aniqlash"""
+    """Gemini 2.5 Flash AI yordamida audiodan musiqaning va qo'shiqchining asl original nomini aniqlash"""
     if not GEMINI_API_KEY or not os.path.exists(file_path):
         return None
 
@@ -50,10 +50,12 @@ async def identify_original_song(file_path: str) -> dict:
                 "parts": [
                     {
                         "text": (
-                            "Ushbu audio fayldagi musiqaning va qo'shiqchining (artist) asl original nomini aniqlang. "
+                            "Siz professional musiqa taniyydigan AI mutaxassisisiz.\n"
+                            "Ushbu audio fayldagi musiqaning va qo'shiqchining (artist) asl rasmiy original nomini aniqlang.\n"
+                            "Qo'shiq tili har qanday bo'lishi mumkin (O'zbek, Uyg'ur, Rus, Ingliz, Turk, Arab va b.).\n"
                             "Faqat bitta qatorda quyidagi aniq formatda javob bering:\n"
                             "ARTIST: <Muallif/Qo'shiqchi nomi> | TITLE: <Musiqa original nomi>\n"
-                            "Agar bu qo'shiq bo'lmasa yoki aniqlab bo'lmasa, UNKNOWN deb javob bering."
+                            "Agar bu qo'shiq bo'lmasa yoki umuman aniqlab bo'lmasa, UNKNOWN deb javob bering."
                         )
                     },
                     {
@@ -86,7 +88,8 @@ def _download_full_original_song_sync(artist: str, title: str) -> dict:
     """YouTube Android/iOS Engine orqali musiqaning to'liq (3-4 daqiqalik) original MP3 versiyasini yuklab olish"""
     queries = [
         f"ytsearch1:{artist} {title} official audio",
-        f"ytsearch1:{artist} {title} original audio",
+        f"ytsearch1:{artist} {title} original track",
+        f"ytsearch1:{artist} {title} audio",
         f"ytsearch1:{artist} {title}",
     ]
 

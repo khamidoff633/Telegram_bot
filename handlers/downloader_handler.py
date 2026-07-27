@@ -17,8 +17,6 @@ from config import REQUIRED_CHANNEL
 
 downloader_router = Router()
 
-URL_REGEX = re.compile(r'https?://(?:www\.)?(?:instagram\.com|instagr\.am|youtube\.com|youtu\.be)/[^\s]+')
-
 MANDATORY_SUB_TEXT = (
     f"⚠️ <b>Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling!</b>\n\n"
     f"Botdan bepul va cheksiz foydalanish uchun quyidagi kanalga ulaning:\n"
@@ -28,18 +26,28 @@ MANDATORY_SUB_TEXT = (
 
 def clean_song_name(name: str) -> str:
     """Instagram usernames (Video by ...), UUID and format extensions cleanup"""
-    if not name or "Video by" in name or "instagram" in name.lower():
+    if not name or "video by" in name.lower() or "instagram" in name.lower() or "voxmedia" in name.lower():
         return "Original Sound"
     cleaned = re.sub(r'_[a-f0-9]{8}\.(?:mp4|mp3|m4a)$', '', name, flags=re.IGNORECASE)
     cleaned = re.sub(r'\.(?:mp4|mp3|m4a)$', '', cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
-@downloader_router.message(F.text & F.text.regexp(URL_REGEX))
+def is_media_url_msg(message: Message) -> bool:
+    if not message or not message.text:
+        return False
+    txt = message.text.lower()
+    return any(d in txt for d in ['instagram.com', 'instagr.am', 'youtube.com', 'youtu.be'])
+
+@downloader_router.message(is_media_url_msg)
 async def handle_video_download(message: Message):
     telegram_id = message.from_user.id
-    url = message.text.strip()
+    text = message.text.strip()
 
-    # 1. Majburiy obuna tekshiruvi (Hamma foydalanuvchilar uchun majburiy)
+    # Silkani ajratib olish
+    url_match = re.search(r'https?://[^\s]+', text)
+    url = url_match.group(0) if url_match else text
+
+    # 1. Majburiy obuna tekshiruvi (Hamma foydalanuvchilar uchun strict majburiy)
     is_subscribed = await check_user_subscription(message.bot, telegram_id)
     if not is_subscribed:
         await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
@@ -76,6 +84,7 @@ async def handle_video_download(message: Message):
 
         video_file = FSInputFile(file_path)
 
+        # Videoni caption yozuvlarisiz toza yuborish
         if user.is_vip:
             await message.answer_video(video=video_file, caption=None)
         else:
@@ -141,6 +150,20 @@ async def handle_video_download(message: Message):
             "Iltimos, silka ochiq (public) post ekanligini tekshiring yoki YouTube Shorts silkasini yuboring!",
             parse_mode="HTML"
         )
+
+@downloader_router.message(F.text & ~F.text.startswith("/"))
+async def handle_unknown_text(message: Message):
+    telegram_id = message.from_user.id
+    is_subscribed = await check_user_subscription(message.bot, telegram_id)
+    if not is_subscribed:
+        await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
+        return
+
+    text = (
+        "💡 <b>Menga Instagram Reels yoki YouTube Shorts/Video silkasini yuboring.</b>\n\n"
+        "Men sizga videoni va uning to'liq original musiqasini yuklab beraman! 🚀"
+    )
+    await message.answer(text, parse_mode="HTML")
 
 @downloader_router.callback_query(F.data.startswith("music_"))
 async def handle_extract_music(callback: CallbackQuery):

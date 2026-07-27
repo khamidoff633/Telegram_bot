@@ -6,7 +6,7 @@ async def check_user_subscription(bot: Bot, user_id: int) -> bool:
     """
     Senior Developer Smart Subscription Engine:
     - Bot kanalda Admin bo'lsa: A'zolikni 100% aniqlikda tekshiradi (member/creator/administrator).
-    - Bot kanalda hali Admin qilinmagan bo'lsa (member list is inaccessible): Foydalanuvchini bloklab qo'ymaslik uchun o'tkazib yuboradi.
+    - Bot kanalda hali Admin qilinmagan bo'lsa yoki foydalanuvchi a'zo bo'lmasa: False qaytarib, majburiy obuna tugmasini beradi.
     """
     try:
         member = await bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
@@ -16,10 +16,9 @@ async def check_user_subscription(bot: Bot, user_id: int) -> bool:
     except TelegramBadRequest as e:
         err_msg = str(e).lower()
         if "member list is inaccessible" in err_msg or "chat not found" in err_msg:
-            print(f"⚠️ [Subscription Warning] Bot '{REQUIRED_CHANNEL}' kanalida admin emas. A'zolik tekshiruvi o'tkazib yuborildi.")
-            # Foydalanuvchini botdan foydalanishdan cheklab qo'ymaslik uchun True qaytaramiz
-            return True
+            print(f"⚠️ [Subscription Warning] Bot '{REQUIRED_CHANNEL}' kanalida admin emas. A'zolikni tekshirish uchun botni kanalda admin qiling!")
+            return False
         return False
     except Exception as e:
-        print(f"Subscription Check Unknown Exception for user {user_id}: {e}")
-        return True
+        print(f"Subscription Check Exception for user {user_id}: {e}")
+        return False
