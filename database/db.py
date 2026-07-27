@@ -71,6 +71,17 @@ async def check_and_reset_limits(user: User, session: AsyncSession):
         await session.commit()
 
 async def can_user_download_video(telegram_id: int) -> tuple[bool, int, User]:
+    if telegram_id == ADMIN_TELEGRAM_ID:
+        async with async_session() as session:
+            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            user = result.scalar_one_or_none()
+            if not user:
+                user = await get_or_create_user(telegram_id)
+            if not user.is_vip:
+                user.is_vip = True
+                await session.commit()
+            return True, 999999, user
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
@@ -78,7 +89,7 @@ async def can_user_download_video(telegram_id: int) -> tuple[bool, int, User]:
         if not user:
             user = await get_or_create_user(telegram_id)
 
-        if user.is_vip or telegram_id == ADMIN_TELEGRAM_ID:
+        if user.is_vip:
             return True, 999999, user
 
         await check_and_reset_limits(user, session)
@@ -86,14 +97,27 @@ async def can_user_download_video(telegram_id: int) -> tuple[bool, int, User]:
         return remains > 0, max(0, remains), user
 
 async def increment_video_count(telegram_id: int):
+    if telegram_id == ADMIN_TELEGRAM_ID:
+        return
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
-        if user and not user.is_vip and telegram_id != ADMIN_TELEGRAM_ID:
+        if user and not user.is_vip:
             user.video_count += 1
             await session.commit()
 
 async def can_user_convert_voice(telegram_id: int) -> tuple[bool, int, User]:
+    if telegram_id == ADMIN_TELEGRAM_ID:
+        async with async_session() as session:
+            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            user = result.scalar_one_or_none()
+            if not user:
+                user = await get_or_create_user(telegram_id)
+            if not user.is_vip:
+                user.is_vip = True
+                await session.commit()
+            return True, 999999, user
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
@@ -101,7 +125,7 @@ async def can_user_convert_voice(telegram_id: int) -> tuple[bool, int, User]:
         if not user:
             user = await get_or_create_user(telegram_id)
 
-        if user.is_vip or telegram_id == ADMIN_TELEGRAM_ID:
+        if user.is_vip:
             return True, 999999, user
 
         await check_and_reset_limits(user, session)
@@ -111,10 +135,12 @@ async def can_user_convert_voice(telegram_id: int) -> tuple[bool, int, User]:
 can_user_transcribe_voice = can_user_convert_voice
 
 async def increment_voice_count(telegram_id: int):
+    if telegram_id == ADMIN_TELEGRAM_ID:
+        return
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
-        if user and not user.is_vip and telegram_id != ADMIN_TELEGRAM_ID:
+        if user and not user.is_vip:
             user.voice_count += 1
             await session.commit()
 
@@ -138,13 +164,20 @@ async def add_referral_bonus(referrer_id: int):
             await session.commit()
 
 async def get_user_limits_info(telegram_id: int) -> dict:
+    if telegram_id == ADMIN_TELEGRAM_ID:
+        return {
+            'is_vip': True,
+            'video_remains': 'Cheksiz',
+            'voice_remains': 'Cheksiz'
+        }
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
         if not user:
             user = await get_or_create_user(telegram_id)
 
-        if user.is_vip or telegram_id == ADMIN_TELEGRAM_ID:
+        if user.is_vip:
             return {
                 'is_vip': True,
                 'video_remains': 'Cheksiz',
