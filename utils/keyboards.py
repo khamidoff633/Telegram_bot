@@ -35,7 +35,7 @@ def get_subscribe_inline_kb(url: str = None):
         match = re.search(r'/(?:reel|p|tv|shorts)/([A-Za-z0-9_-]+)', url)
         short_id = match.group(1)[:40] if match else url[:40]
         builder.button(text="🎵 Musiqa ajratib olish", callback_data=f"m_{short_id}")
-    builder.button(text="💳 Obuna bo'lish (Cheksiz Limit)", callback_data="buy_vip")
+    builder.button(text="🟢 Obuna Bo'lish!", callback_data="buy_vip")
     builder.adjust(1)
     return builder.as_markup()
 
