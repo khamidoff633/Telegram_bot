@@ -40,17 +40,31 @@ def clean_song_name(name: str) -> str:
     return cleaned.strip()
 
 def extract_song_query_from_metadata(result: dict) -> str:
-    """Video description va metama'lumotlardan asl qo'shiq nomini ajratib olish"""
+    """Video description va metama'lumotlardan asl qo'shiq va muallif nomini professional ajratish"""
     if result.get('track') and result.get('artist'):
         return f"{result['artist']} {result['track']}"
 
     desc = result.get('description', '')
     if desc:
+        credits_match = re.search(r'(?:Créditos|Credits|By|Artist):\s*([^,\n]+),\s*[“"]([^”"\n]+)[”"]', desc, re.IGNORECASE)
+        if credits_match:
+            artist = credits_match.group(1).strip()
+            song = credits_match.group(2).strip()
+            return f"{artist} {song}"
+
         lines = [l.strip() for l in desc.split('\n') if l.strip()]
         for line in lines[:5]:
             cleaned = re.sub(r'[^\w\s\-\ä\ö\ü\ß\á\é\í\ó\ú\ñ\à\è\ì\ò\ù]', ' ', line).strip()
             cleaned = re.sub(r'\s+', ' ', cleaned)
-            if len(cleaned) > 2 and not any(kw in cleaned.lower() for kw in ["video by", "follow", "http", "siga", "créditos", "lanzada"]):
+            if len(cleaned) > 2 and not any(kw in cleaned.lower() for kw in ["video by", "follow", "http", "siga", "lanzada"]):
+                hashtags = re.findall(r'#(\w+)', desc)
+                artist_hint = ""
+                for h in hashtags:
+                    if len(h) > 3 and h.lower() not in ["music", "pop", "video", "reels", "viral", "trending", "fyp"]:
+                        artist_hint = h
+                        break
+                if artist_hint and artist_hint.lower() not in cleaned.lower():
+                    return f"{artist_hint} {cleaned}"
                 return cleaned
 
     raw_title = result.get('title', '')
@@ -112,7 +126,7 @@ async def handle_video_download(message: Message):
 
         if not os.path.exists(file_path):
             await status_msg.edit_text(
-                "❌ <b>Videoni yuklab bo'mladi.</b>\n\n"
+                "❌ <b>Videoni yuklab bo'lmadi.</b>\n\n"
                 "Iltimos, silka ochiq (public) post ekanligini tekshiring yoki YouTube Shorts silkasini yuborib ko'ring!",
                 parse_mode="HTML"
             )
