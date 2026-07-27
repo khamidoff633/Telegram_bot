@@ -40,7 +40,7 @@ async def transcribe_voice(file_path: str) -> str:
             payload = {
                 "contents": [{
                     "parts": [
-                        {"text": "Ushbu ovozli xabarni (voice note) o'zbek, rus yoki ingliz tilida o'ta aniqlikda matnga o'giring. Faqat eshitilgan matnni yozing. Ortiqcha izoh bermang."},
+                        {"text": "Ushbu ovozli yoki audio xabarni o'zbek, rus yoki ingliz tilida o'ta aniqlikda matnga o'giring. Faqat eshitilgan matnni yozing, hech qanday qo'shimcha so'z yoki izoh qo'shmang."},
                         {
                             "inline_data": {
                                 "mime_type": mime_type,
@@ -48,7 +48,11 @@ async def transcribe_voice(file_path: str) -> str:
                             }
                         }
                     ]
-                }]
+                }],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 8192
+                }
             }
 
             async with aiohttp.ClientSession() as session:
@@ -58,11 +62,16 @@ async def transcribe_voice(file_path: str) -> str:
                         async with session.post(url, json=payload, timeout=45) as resp:
                             result = await resp.json()
                             if "candidates" in result and len(result["candidates"]) > 0:
-                                parts = result["candidates"][0]["content"]["parts"]
-                                text = "".join([p.get("text", "") for p in parts]).strip()
+                                cand = result["candidates"][0]
+                                content = cand.get("content", {}) or {}
+                                parts = content.get("parts", []) or []
+                                text_chunks = [p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p]
+                                text = "".join(text_chunks).strip()
                                 if text:
                                     logging.info(f"✅ Gemini Voice Transcription muvaffaqiyatli model: {model_name}")
                                     return text
+                                else:
+                                    logging.warning(f"⚠️ Gemini Model {model_name} bo'sh matn qaytardi: {cand}")
                             elif "error" in result:
                                 logging.warning(f"⚠️ Gemini API Xatosi ({model_name}): {result['error']}")
                     except Exception as model_err:
@@ -70,6 +79,7 @@ async def transcribe_voice(file_path: str) -> str:
 
         except Exception as e:
             logging.error(f"❌ Gemini REST Xatosi: {e}")
+
 
     # 2-Ustuvorlik: Groq API (Whisper Large V3)
     if GROQ_API_KEY:
