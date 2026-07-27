@@ -62,7 +62,7 @@ async def handle_video_download(message: Message):
             "48 soatdan keyin yana bepul foydalanishingiz mumkin.\n"
             "Sifatli (1080p/4K HD) va cheksiz limit xohlasangiz <b>Obuna bo'lish</b> tugmasini bosing!"
         )
-        await message.answer(alert_text, reply_markup=get_subscribe_inline_kb(), parse_mode="HTML")
+        await message.answer(alert_text, reply_markup=get_subscribe_inline_kb(url=url), parse_mode="HTML")
         return
 
     status_msg = await message.answer("⏳ Video va uning to'liq (original) musiqasi yuklanmoqda, iltimos kuting...")
@@ -84,15 +84,20 @@ async def handle_video_download(message: Message):
 
         video_file = FSInputFile(file_path)
 
-        # Videoni caption yozuvlarisiz toza yuborish
-        if user.is_vip:
+        # Videoni caption yozuvlarisiz toza yuborish (Inline keyboard bilan)
+        try:
+            if user.is_vip:
+                await message.answer_video(video=video_file, caption=None)
+            else:
+                await message.answer_video(
+                    video=video_file, 
+                    caption=None, 
+                    reply_markup=get_subscribe_inline_kb(url=url)
+                )
+                await increment_video_count(telegram_id)
+        except Exception as vid_err:
+            print(f"Answer video err (retrying without kb): {vid_err}")
             await message.answer_video(video=video_file, caption=None)
-        else:
-            await message.answer_video(
-                video=video_file, 
-                caption=None, 
-                reply_markup=get_subscribe_inline_kb(url=url)
-            )
             await increment_video_count(telegram_id)
 
         # 2-Qadam: AI & YouTube Engine yordamida musiqaning TO'LIQ (ORIGINAL 3+ MINUTE) MP3 versiyasini yuborish!
@@ -103,7 +108,6 @@ async def handle_video_download(message: Message):
             final_artist = "VoxMedia AI"
 
             if temp_mp3 and os.path.exists(temp_mp3):
-                # 1-Urinish: Gemini AI orqali aniqlash
                 song_info = await identify_original_song(temp_mp3)
                 if song_info:
                     artist = song_info['artist']
@@ -114,7 +118,6 @@ async def handle_video_download(message: Message):
                         final_title = html.escape(full_song_data['title'])
                         final_artist = html.escape(full_song_data['performer'])
 
-                # 2-Urinish: Nomi bo'yicha to'liq original MP3 treki qidirish
                 if not audio_to_send or not os.path.exists(audio_to_send):
                     full_title_data = await download_full_song_by_title(raw_title)
                     if full_title_data and os.path.exists(full_title_data['file_path']):
@@ -122,7 +125,6 @@ async def handle_video_download(message: Message):
                         final_title = html.escape(full_title_data['title'])
                         final_artist = html.escape(full_title_data['performer'])
 
-            # 3-Zaxira: Kesilgan mp3
             if not audio_to_send or not os.path.exists(audio_to_send):
                 audio_to_send = temp_mp3
 
@@ -148,7 +150,10 @@ async def handle_video_download(message: Message):
         except Exception as audio_err:
             print(f"Auto Full Original Audio Extraction Error: {audio_err}")
 
-        await status_msg.delete()
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
 
         if os.path.exists(file_path):
             try:
@@ -158,11 +163,14 @@ async def handle_video_download(message: Message):
 
     except Exception as e:
         print(f"Download Error: {e}")
-        await status_msg.edit_text(
-            "❌ <b>Videoni yuklab bo'lmadi.</b>\n\n"
-            "Iltimos, silka ochiq (public) post ekanligini tekshiring yoki YouTube Shorts silkasini yuboring!",
-            parse_mode="HTML"
-        )
+        try:
+            await status_msg.edit_text(
+                "❌ <b>Videoni yuklab bo'lmadi.</b>\n\n"
+                "Iltimos, silka ochiq (public) post ekanligini tekshiring yoki YouTube Shorts silkasini yuboring!",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
 @downloader_router.message(F.text & ~F.text.startswith("/"))
 async def handle_unknown_text(message: Message):
@@ -178,19 +186,19 @@ async def handle_unknown_text(message: Message):
     )
     await message.answer(text, parse_mode="HTML")
 
-@downloader_router.callback_query(F.data.startswith("music_"))
+@downloader_router.callback_query(F.data.startswith("music_") | F.data.startswith("m_"))
 async def handle_extract_music(callback: CallbackQuery):
-    url = callback.data.replace("music_", "", 1)
+    url = callback.data.replace("music_", "", 1).replace("m_", "", 1)
     await callback.answer("🎵 Musiqa ajratib olinmoqda...")
     status_msg = await callback.message.answer("⏳ Videodagi musiqa ajratib olinmoqda...")
 
     try:
         result = await extract_audio_from_url(url)
-        file_path = result['file_path']
-        raw_title = result.get('title', 'Original Sound')
-        safe_title = html.escape(clean_song_name(raw_title))
+        if result and os.path.exists(result.get('file_path', '')):
+            file_path = result['file_path']
+            raw_title = result.get('title', 'Original Sound')
+            safe_title = html.escape(clean_song_name(raw_title))
 
-        if os.path.exists(file_path):
             audio_file = FSInputFile(file_path)
             await callback.message.answer_audio(
                 audio=audio_file,
@@ -198,10 +206,16 @@ async def handle_extract_music(callback: CallbackQuery):
                 performer="VoxMedia AI",
                 caption=None
             )
-            await status_msg.delete()
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
             os.remove(file_path)
         else:
             await status_msg.edit_text("❌ Audioga aylantirishda xatolik bo'ldi.")
     except Exception as e:
         print(f"Music Extract Error: {e}")
-        await status_msg.edit_text("❌ Audioga aylantirishda xatolik yuz berdi.")
+        try:
+            await status_msg.edit_text("❌ Audioga aylantirishda xatolik yuz berdi.")
+        except Exception:
+            pass
