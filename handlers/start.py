@@ -107,6 +107,11 @@ async def btn_vip_status(message: Message):
     username = message.from_user.username
     is_admin = is_admin_user(telegram_id, username)
 
+    if not is_admin:
+        if not await check_user_subscription(message.bot, telegram_id, username):
+            await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
+            return
+
     if is_admin:
         text = "👑 <b>Siz Asosiy Admin statusidasiz!</b>\n\nBarcha VIP imkoniyatlar va limitlar siz uchun umrbod CHEKSIZ!"
         await message.answer(text, reply_markup=get_main_reply_kb(is_admin=True), parse_mode="HTML")
@@ -127,6 +132,12 @@ async def btn_referral(message: Message):
     telegram_id = message.from_user.id
     username = message.from_user.username
     is_admin = is_admin_user(telegram_id, username)
+
+    if not is_admin:
+        if not await check_user_subscription(message.bot, telegram_id, username):
+            await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
+            return
+
     bot_info = await message.bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start={telegram_id}"
     
@@ -142,6 +153,12 @@ async def btn_limits(message: Message):
     telegram_id = message.from_user.id
     username = message.from_user.username
     is_admin = is_admin_user(telegram_id, username)
+
+    if not is_admin:
+        if not await check_user_subscription(message.bot, telegram_id, username):
+            await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
+            return
+
     info = await get_user_limits_info(telegram_id, username)
 
     if is_admin or info['is_vip']:
@@ -164,6 +181,12 @@ async def cmd_help(message: Message):
     telegram_id = message.from_user.id
     username = message.from_user.username
     is_admin = is_admin_user(telegram_id, username)
+
+    if not is_admin:
+        if not await check_user_subscription(message.bot, telegram_id, username):
+            await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
+            return
+
     text = (
         "ℹ️ <b>Yordam va Yo'riqnoma:</b>\n\n"
         "1. <b>Video yuklash:</b> Instagram, YouTube yoki TikTok silkasini botga yuboring.\n"
@@ -172,3 +195,4 @@ async def cmd_help(message: Message):
         "👨‍💻 Muammo bo'lsa admin bilan bog'laning: @bakhriddin03_05"
     )
     await message.answer(text, reply_markup=get_main_reply_kb(is_admin=is_admin), parse_mode="HTML")
+
