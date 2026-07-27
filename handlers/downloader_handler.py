@@ -61,7 +61,7 @@ def is_media_url_msg(message: Message) -> bool:
     if not message or not message.text:
         return False
     txt = message.text.lower()
-    return any(d in txt for d in ['instagram.com', 'instagr.am', 'youtube.com', 'youtu.be'])
+    return any(d in txt for d in ['instagram.com', 'instagr.am', 'youtube.com', 'youtu.be', 'tiktok.com', 'vt.tiktok.com'])
 
 @downloader_router.message(is_media_url_msg)
 async def handle_video_download(message: Message):

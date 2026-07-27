@@ -79,12 +79,52 @@ def _download_instagram_direct(url: str) -> dict:
 
     return None
 
+def _download_tiktok_direct(url: str) -> dict:
+    """TikTok HD Video Watermark-Free Direct Scraper Engine (TikWM API)"""
+    try:
+        api_url = f"https://www.tikwm.com/api/?url={url}"
+        headers = {'User-Agent': USER_AGENTS[0]}
+        res = requests.get(api_url, headers=headers, timeout=12)
+        if res.status_code == 200:
+            res_data = res.json()
+            data = res_data.get("data", {})
+            video_url = data.get("play") or data.get("wmplay")
+            if video_url:
+                if not video_url.startswith("http"):
+                    video_url = "https://www.tikwm.com" + video_url
+                file_id = str(uuid.uuid4())[:8]
+                file_path = os.path.join(DOWNLOAD_DIR, f"tiktok_{file_id}.mp4")
+                v_res = requests.get(video_url, headers=headers, stream=True, timeout=30)
+                if v_res.status_code == 200:
+                    with open(file_path, 'wb') as f:
+                        for chunk in v_res.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
+                        music_info = data.get("music_info", {})
+                        return {
+                            'file_path': file_path,
+                            'title': data.get("title", "TikTok Video"),
+                            'uploader': data.get("author", {}).get("nickname", "TikTok Creator"),
+                            'track': music_info.get("title"),
+                            'artist': music_info.get("author"),
+                            'description': data.get("title", "")
+                        }
+    except Exception as e:
+        print(f"TikTok Direct Scrape Error: {e}")
+    return None
+
 def _download_video_sync(url: str, is_vip: bool = False) -> dict:
     ensure_cookies_file()
     file_id = str(uuid.uuid4())[:8]
     output_template = os.path.join(DOWNLOAD_DIR, f"video_{file_id}.%(ext)s")
 
-    clean_url = url.split('?')[0] if '?' in url else url
+    clean_url = url.split('?')[0] if '?' in url and ('instagram.com' in url or 'instagr.am' in url or 'tiktok.com' in url) else url
+
+    # TikTok zaxira dvigateli
+    if 'tiktok.com' in url or 'vt.tiktok.com' in url:
+        tt_result = _download_tiktok_direct(url)
+        if tt_result and os.path.exists(tt_result['file_path']):
+            return tt_result
 
     ydl_opts = {
         'format': 'best',
