@@ -40,9 +40,12 @@ def extract_song_query_from_metadata(result: dict) -> str:
 
     desc = result.get('description', '')
     if desc:
+        # Search for artist/song name keywords in description (e.g. Training Season, Dua Lipa)
         lines = [l.strip() for l in desc.split('\n') if l.strip()]
-        for line in lines[:4]:
-            cleaned = re.sub(r'[\(\[\{\#\✨\🎻\🎶\🎵\🎤\🎧].*$', '', line).strip()
+        for line in lines[:5]:
+            # Remove emojis and special characters
+            cleaned = re.sub(r'[^\w\s\-\ä\ö\ü\ß\á\é\í\ó\ú\ñ\à\è\ì\ò\ù]', ' ', line).strip()
+            cleaned = re.sub(r'\s+', ' ', cleaned)
             if len(cleaned) > 2 and not any(kw in cleaned.lower() for kw in ["video by", "follow", "http", "siga", "créditos", "lanzada"]):
                 return cleaned
 
@@ -86,7 +89,8 @@ async def handle_video_download(message: Message):
         await message.answer(alert_text, reply_markup=get_subscribe_inline_kb(url=url), parse_mode="HTML")
         return
 
-    status_msg = await message.answer("⏳ Video va uning to'liq (original) musiqasi yuklanmoqda, iltimos kuting...")
+    # User Request: Simple loading message
+    status_msg = await message.answer("⏳ Video yuklanmoqda...")
 
     try:
         # 1-Qadam: Videoni yuklash
@@ -225,7 +229,7 @@ async def handle_unknown_text(message: Message):
 async def handle_extract_music(callback: CallbackQuery):
     url = callback.data.replace("music_", "", 1).replace("m_", "", 1)
     await callback.answer("🎵 Musiqa ajratib olinmoqda...")
-    status_msg = await callback.message.answer("⏳ Videodagi musiqa ajratib olinmoqda...")
+    status_msg = await callback.message.answer("⏳ Video yuklanmoqda...")
 
     try:
         result = await extract_audio_from_url(url)
