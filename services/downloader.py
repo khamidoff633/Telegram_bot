@@ -25,7 +25,7 @@ def ensure_cookies_file():
         with open(COOKIE_FILE_PATH, "w") as f:
             f.write(cookie_content)
 
-def _download_instagram_direct(url: str) -> str:
+def _download_instagram_direct(url: str) -> dict:
     """Instagram Reels / Posts uchun maxsus scraping usuli"""
     match = re.search(r'/(?:reel|p|tv)/([A-Za-z0-9_-]+)', url)
     if not match:
@@ -66,7 +66,14 @@ def _download_instagram_direct(url: str) -> str:
                             for chunk in v_res.iter_content(chunk_size=8192):
                                 f.write(chunk)
                         if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
-                            return file_path
+                            return {
+                                'file_path': file_path,
+                                'title': 'Instagram Reel',
+                                'uploader': 'VoxMedia Video',
+                                'track': None,
+                                'artist': None,
+                                'description': ''
+                            }
         except Exception as e:
             print(f"Instagram Direct Scrape Error: {e}")
 
@@ -77,7 +84,7 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
     file_id = str(uuid.uuid4())[:8]
     output_template = os.path.join(DOWNLOAD_DIR, f"video_{file_id}.%(ext)s")
 
-    clean_url = url.split('?')[0] if '?' in url and ('instagram.com' in url or 'instagr.am' in url) else url
+    clean_url = url.split('?')[0] if '?' in url else url
 
     ydl_opts = {
         'format': 'best',
@@ -85,7 +92,7 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
         'quiet': True,
         'no_warnings': True,
         'user_agent': USER_AGENTS[0],
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+        'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'web']}},
     }
 
     if os.path.exists(COOKIE_FILE_PATH):
@@ -112,29 +119,27 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
         print(f"yt-dlp birinchi xato: {e}. Fallback usul o'tkazilmoqda...")
 
     if 'instagram.com' in url or 'instagr.am' in url:
-        direct_path = _download_instagram_direct(clean_url)
-        if direct_path and os.path.exists(direct_path):
-            return {
-                'file_path': direct_path,
-                'title': 'Instagram Reel',
-                'uploader': 'VoxMedia Video',
-                'track': None,
-                'artist': None,
-                'description': ''
-            }
+        direct_result = _download_instagram_direct(clean_url)
+        if direct_result and os.path.exists(direct_result['file_path']):
+            return direct_result
 
     ydl_opts_fallback = {
-        'format': 'bestaudio/best',
+        'format': 'best',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+        'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'web']}},
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
             info = ydl.extract_info(clean_url, download=True)
             filename = ydl.prepare_filename(info)
+            base, _ = os.path.splitext(filename)
+            mp4_filename = base + ".mp4"
+            if os.path.exists(mp4_filename):
+                filename = mp4_filename
+
             return {
                 'file_path': filename,
                 'title': info.get('title', 'Media Video'),
