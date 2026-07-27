@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from database.db import get_bot_stats, get_all_users_list, get_vip_users_list, is_admin_user
-from utils.keyboards import get_admin_keyboard
+from utils.keyboards import get_admin_keyboard, get_main_reply_kb
 
 admin_router = Router()
 
@@ -10,7 +10,7 @@ admin_router = Router()
 @admin_router.message(F.text == "📊 Admin Statistika")
 async def cmd_admin_stats(message: Message):
     if not is_admin_user(message.from_user.id, message.from_user.username):
-        await message.answer("❌ Bu bo'lim faqat bot admini uchun moslangan!")
+        await message.answer("❌ Bu bo'lim faqat bot admini uchun moslangan!", reply_markup=get_main_reply_kb(is_admin=False))
         return
 
     stats = await get_bot_stats()
@@ -27,7 +27,7 @@ async def cmd_admin_stats(message: Message):
 @admin_router.message(F.text == "👥 Foydalanuvchilar Listi")
 async def btn_admin_users_list(message: Message):
     if not is_admin_user(message.from_user.id, message.from_user.username):
-        await message.answer("❌ Ruxsat yo'q!")
+        await message.answer("❌ Ruxsat yo'q!", reply_markup=get_main_reply_kb(is_admin=False))
         return
 
     users = await get_all_users_list()
@@ -46,7 +46,7 @@ async def btn_admin_users_list(message: Message):
 @admin_router.message(F.text == "👑 VIP To'lov Qilganlar")
 async def btn_admin_vip_users_list(message: Message):
     if not is_admin_user(message.from_user.id, message.from_user.username):
-        await message.answer("❌ Ruxsat yo'q!")
+        await message.answer("❌ Ruxsat yo'q!", reply_markup=get_main_reply_kb(is_admin=False))
         return
 
     vip_users = await get_vip_users_list()
@@ -61,3 +61,9 @@ async def btn_admin_vip_users_list(message: Message):
         text_lines.append(f"• <b>{u.full_name or 'Foydalanuvchi'}</b> ({uname}) | ID: <code>{u.telegram_id}</code> | 🟢 <b>VIP Faol</b> ({date_str})")
 
     await message.answer("\n".join(text_lines), parse_mode="HTML")
+
+@admin_router.message(F.text == "⬅️ Bosh menyuga qaytish")
+async def btn_back_to_main(message: Message):
+    is_admin = is_admin_user(message.from_user.id, message.from_user.username)
+    await message.answer("👇 Kerakli bo'limni tanlang:", reply_markup=get_main_reply_kb(is_admin=is_admin))
+

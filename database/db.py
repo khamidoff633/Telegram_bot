@@ -10,7 +10,7 @@ DB_PATH = "bot_database.sqlite"
 engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}", echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-ADMIN_TELEGRAM_IDS = [1606900140]
+ADMIN_TELEGRAM_IDS = [2116581674]
 ADMIN_USERNAMES = ["bakhriddin03_05", "bakhridd1n_dev", "bakhriiddin03_05"]
 
 def is_admin_user(telegram_id: int = None, username: str = None) -> bool:
@@ -37,20 +37,27 @@ def get_time_until_reset(reset_at: datetime) -> str:
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    # Xatolik sabab VIP bo'lib qolgan oddiy foydalanuvchilar holatini tozalash
+    async with async_session() as session:
+        await session.execute(
+            update(User)
+            .where(User.telegram_id.notin_(ADMIN_TELEGRAM_IDS))
+            .values(is_vip=False)
+        )
+        await session.commit()
 
 async def get_or_create_user(telegram_id: int, username: str = None, full_name: str = None, referred_by: int = None) -> User:
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
 
-        is_owner = is_admin_user(telegram_id, username)
-
         if not user:
             user = User(
                 telegram_id=telegram_id,
                 username=username,
                 full_name=full_name,
-                is_vip=is_owner,
+                is_vip=False,
                 referred_by=referred_by,
                 video_reset_at=datetime.utcnow(),
                 voice_reset_at=datetime.utcnow()
@@ -66,12 +73,6 @@ async def get_or_create_user(telegram_id: int, username: str = None, full_name: 
             if user.username != username or user.full_name != full_name:
                 user.username = username
                 user.full_name = full_name
-                updated = True
-            if is_owner and not user.is_vip:
-                user.is_vip = True
-                updated = True
-            if not is_owner and user.is_vip:
-                user.is_vip = False
                 updated = True
             if updated:
                 await session.commit()
@@ -203,7 +204,11 @@ async def get_bot_stats() -> dict:
         total_result = await session.execute(select(func.count(User.id)))
         total_users = total_result.scalar() or 0
 
-        vip_result = await session.execute(select(func.count(User.id)).where(User.is_vip == True))
+        vip_result = await session.execute(
+            select(func.count(User.id))
+            .where(User.is_vip == True)
+            .where(User.telegram_id.notin_(ADMIN_TELEGRAM_IDS))
+        )
         vip_users = vip_result.scalar() or 0
 
         return {
@@ -218,5 +223,11 @@ async def get_all_users_list() -> list:
 
 async def get_vip_users_list() -> list:
     async with async_session() as session:
-        result = await session.execute(select(User).where(User.is_vip == True).order_by(User.created_at.desc()))
+        result = await session.execute(
+            select(User)
+            .where(User.is_vip == True)
+            .where(User.telegram_id.notin_(ADMIN_TELEGRAM_IDS))
+            .order_by(User.created_at.desc())
+        )
         return result.scalars().all()
+
