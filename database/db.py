@@ -188,3 +188,8 @@ async def get_all_users_list() -> list:
     async with async_session() as session:
         result = await session.execute(select(User).order_by(User.created_at.desc()).limit(50))
         return result.scalars().all()
+
+async def get_vip_users_list() -> list:
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.is_vip == True).order_by(User.created_at.desc()))
+        return result.scalars().all()

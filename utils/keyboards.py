@@ -11,11 +11,11 @@ def get_main_reply_kb(is_admin: bool = False):
                 KeyboardButton(text="🎙️ Voice Matnga")
             ],
             [
-                KeyboardButton(text="👥 Foydalanuvchilar Listi"),
-                KeyboardButton(text="📊 Admin Statistika")
+                KeyboardButton(text="👑 VIP To'lov Qilganlar"),
+                KeyboardButton(text="👥 Barcha Foydalanuvchilar")
             ],
             [
-                KeyboardButton(text="📢 Ommaviy Xabar"),
+                KeyboardButton(text="📊 Admin Statistika"),
                 KeyboardButton(text="ℹ️ Yordam")
             ]
         ]
@@ -59,8 +59,8 @@ def get_payment_kb():
 
 def get_admin_keyboard():
     keyboard = [
-        [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="📢 Xabar yuborish")],
-        [KeyboardButton(text="⬅️ Bosh menyuga qaytish")]
+        [KeyboardButton(text="📊 Admin Statistika"), KeyboardButton(text="👑 VIP To'lov Qilganlar")],
+        [KeyboardButton(text="👥 Barcha Foydalanuvchilar"), KeyboardButton(text="⬅️ Bosh menyuga qaytish")]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
