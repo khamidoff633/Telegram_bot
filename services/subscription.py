@@ -2,15 +2,21 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from config import REQUIRED_CHANNEL
 
+ADMIN_TELEGRAM_ID = 1606900140
+
 async def check_user_subscription(bot: Bot, user_id: int) -> bool:
     """
     Senior Developer Smart Subscription Engine:
-    1. Bot kanalda ADMIN bo'lsa:
-       - Foydalanuvchi a'zo bo'lsa (creator, administrator, member) -> True
-       - Foydalanuvchi a'zo bo'lmasa (left, kicked) -> False
-    2. Bot kanalda hali ADMIN qilinmagan bo'lsa (member list is inaccessible / not enough rights):
-       - Konsolga ogohlantirish yozadi va a'zo foydalanuvchilarni (jumladan kanal egasini) asossiz bloklab qo'ymaslik uchun True qaytaradi.
+    1. Admin (1606900140) har doim True (Cheksiz VIP va obunasiz o'tadi).
+    2. Bot kanalda ADMIN bo'lsa:
+       - Creator / Admin / Member -> True (A'zo bo'lgan)
+       - Left / Kicked -> False (A'zo bo'lmagan)
+    3. Bot kanalda hali ADMIN qilinmagan bo'lsa (member list is inaccessible / not enough rights):
+       - A'zo bo'lganlarni ham asossiz bloklab qo'ymaslik uchun True qaytaradi.
     """
+    if user_id == ADMIN_TELEGRAM_ID:
+        return True
+
     if not REQUIRED_CHANNEL:
         return True
 
