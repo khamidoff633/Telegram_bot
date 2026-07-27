@@ -64,12 +64,12 @@ async def main():
     )
     dp = Dispatcher()
 
-    # Routerlarni biriktirish
+    # Routerlarni biriktirish Tartibi (admin_router birinchi bo'lishi shart!)
     dp.include_router(start_router)
-    dp.include_router(downloader_router)
-    dp.include_router(voice_router)
     dp.include_router(admin_router)
     dp.include_router(payment_router)
+    dp.include_router(downloader_router)
+    dp.include_router(voice_router)
 
     print("🚀 Telegram Bot muvaffaqiyatli ishga tushdi va buyruqlarni kutmoqda...")
 

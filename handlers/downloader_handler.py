@@ -25,6 +25,12 @@ MANDATORY_SUB_TEXT = (
     f"<i>Kanalga a'zo bo'lgach, <b>\"✅ A'zo bo'ldim (Tekshirish)\"</b> tugmasini bosing!</i>"
 )
 
+MENU_BUTTON_TEXTS = {
+    "🎬 Media Yuklash", "🎙️ Voice Matnga", "👑 VIP Status", "🔗 Referal Taklif",
+    "📊 Mening Limitlarim", "ℹ️ Yordam", "👑 VIP To'lov Qilganlar",
+    "👥 Barcha Foydalanuvchilar", "📊 Admin Statistika"
+}
+
 def clean_song_name(name: str) -> str:
     """Instagram usernames (Video by ...), UUID and format extensions cleanup"""
     if not name or "video by" in name.lower() or "instagram" in name.lower() or "voxmedia" in name.lower():
@@ -106,7 +112,7 @@ async def handle_video_download(message: Message):
 
         if not os.path.exists(file_path):
             await status_msg.edit_text(
-                "❌ <b>Videoni yuklab bo'lmadi.</b>\n\n"
+                "❌ <b>Videoni yuklab bo'mladi.</b>\n\n"
                 "Iltimos, silka ochiq (public) post ekanligini tekshiring yoki YouTube Shorts silkasini yuborib ko'ring!",
                 parse_mode="HTML"
             )
@@ -219,14 +225,14 @@ async def handle_video_download(message: Message):
         print(f"Download Error: {e}")
         try:
             await status_msg.edit_text(
-                "❌ <b>Videoni yuklab bo'mladi.</b>\n\n"
+                "❌ <b>Videoni yuklab bo'lmadi.</b>\n\n"
                 "Iltimos, silka ochiq (public) post ekanligini tekshiring yoki YouTube Shorts silkasini yuboring!",
                 parse_mode="HTML"
             )
         except Exception:
             pass
 
-@downloader_router.message(F.text & ~F.text.startswith("/"))
+@downloader_router.message(F.text & ~F.text.startswith("/") & ~F.text.in_(MENU_BUTTON_TEXTS))
 async def handle_unknown_text(message: Message):
     telegram_id = message.from_user.id
     username = message.from_user.username
