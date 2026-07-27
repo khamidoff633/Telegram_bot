@@ -33,6 +33,27 @@ def clean_song_name(name: str) -> str:
     cleaned = re.sub(r'\.(?:mp4|mp3|m4a)$', '', cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
+def extract_song_query_from_metadata(result: dict) -> str:
+    """Video description va metama'lumotlardan asl qo'shiq nomini ajratib olish"""
+    if result.get('track') and result.get('artist'):
+        return f"{result['artist']} {result['track']}"
+
+    desc = result.get('description', '')
+    if desc:
+        lines = [l.strip() for l in desc.split('\n') if l.strip()]
+        for line in lines[:4]:
+            cleaned = re.sub(r'[\(\[\{\#\✨\🎻\🎶\🎵\🎤\🎧].*$', '', line).strip()
+            if len(cleaned) > 2 and not any(kw in cleaned.lower() for kw in ["video by", "follow", "http", "siga", "créditos", "lanzada"]):
+                return cleaned
+
+    raw_title = result.get('title', '')
+    if raw_title and not any(kw in raw_title.lower() for kw in ["video by", "instagram", "voxmedia"]):
+        cleaned_title = re.sub(r'[\(\[\{].*?[\)\]\}]', '', raw_title).strip()
+        if len(cleaned_title) > 2:
+            return cleaned_title
+
+    return ""
+
 def is_media_url_msg(message: Message) -> bool:
     if not message or not message.text:
         return False
@@ -98,26 +119,35 @@ async def handle_video_download(message: Message):
                 )
                 await increment_video_count(telegram_id)
         except Exception as vid_err:
-            print(f"Answer video err (retrying without kb): {vid_err}")
+            print(f"Answer video err: {vid_err}")
             await message.answer_video(video=video_file, caption=None)
             await increment_video_count(telegram_id)
 
-        # 2-Qadam: Audiodan TO'LIQ (ORIGINAL 3+ MINUTE) MP3 treki yuklash
+        # 2-Qadam: Post Description va Metadata bo'yicha TO'LIQ (3+ MINUTE) MP3 treki yuklash
         try:
             temp_mp3 = extract_audio_from_local_file(file_path)
             audio_to_send = None
             final_title = safe_title
             final_artist = "VoxMedia AI"
 
-            # A. Meta metadata bo'yicha to'liq MP3 trekini yuklash
-            if meta_artist and meta_track:
+            # A. Description / Meta ma'lumotlaridan musiqa nomini ajratib olish
+            search_query = extract_song_query_from_metadata(result)
+            if search_query:
+                full_desc_song = await download_full_song_by_title(search_query)
+                if full_desc_song and os.path.exists(full_desc_song['file_path']):
+                    audio_to_send = full_desc_song['file_path']
+                    final_title = html.escape(full_desc_song['title'])
+                    final_artist = html.escape(full_desc_song['performer'])
+
+            # B. Meta track / artist bo'yicha
+            if not audio_to_send and meta_artist and meta_track:
                 full_meta_song = await download_full_original_song(meta_artist, meta_track)
                 if full_meta_song and os.path.exists(full_meta_song['file_path']):
                     audio_to_send = full_meta_song['file_path']
                     final_title = html.escape(full_meta_song['title'])
                     final_artist = html.escape(full_meta_song['performer'])
 
-            # B. Gemini AI orqali aniqlab to'liq trekini yuklash
+            # C. Gemini AI orqali aniqlab to'liq trekini yuklash
             if not audio_to_send and temp_mp3 and os.path.exists(temp_mp3):
                 song_info = await identify_original_song(temp_mp3)
                 if song_info:
@@ -129,15 +159,7 @@ async def handle_video_download(message: Message):
                         final_title = html.escape(full_song_data['title'])
                         final_artist = html.escape(full_song_data['performer'])
 
-            # C. Video nomi/sarlavhasi bo'yicha YouTube Engine'dan TO'LIQ (3+ min) MP3 treki qidirish
-            if not audio_to_send or not os.path.exists(audio_to_send):
-                full_title_data = await download_full_song_by_title(raw_title)
-                if full_title_data and os.path.exists(full_title_data['file_path']):
-                    audio_to_send = full_title_data['file_path']
-                    final_title = html.escape(full_title_data['title'])
-                    final_artist = html.escape(full_title_data['performer'])
-
-            # D. Zaxira: Videodagi kesilgan audio
+            # D. Zaxira: Videodagi kesilgan mp3
             if not audio_to_send or not os.path.exists(audio_to_send):
                 audio_to_send = temp_mp3
 
