@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: telegram-bot
+    env: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: INSTAGRAM_COOKIE
+        sync: false
+      - key: ADMIN_USERNAME
+        value: bakhridd1n_dev
+      - key: PORT
+        value: "8080"
