@@ -108,6 +108,8 @@ async def can_user_convert_voice(telegram_id: int) -> tuple[bool, int, User]:
         remains = FREE_VOICE_LIMIT - user.voice_count
         return remains > 0, max(0, remains), user
 
+can_user_transcribe_voice = can_user_convert_voice
+
 async def increment_voice_count(telegram_id: int):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
@@ -115,6 +117,15 @@ async def increment_voice_count(telegram_id: int):
         if user and not user.is_vip and telegram_id != ADMIN_TELEGRAM_ID:
             user.voice_count += 1
             await session.commit()
+
+async def activate_vip(telegram_id: int, days: int = 30):
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            user = await get_or_create_user(telegram_id)
+        user.is_vip = True
+        await session.commit()
 
 async def add_referral_bonus(referrer_id: int):
     async with async_session() as session:
@@ -148,4 +159,17 @@ async def get_user_limits_info(telegram_id: int) -> dict:
             'is_vip': False,
             'video_remains': v_remains,
             'voice_remains': a_remains
+        }
+
+async def get_bot_stats() -> dict:
+    async with async_session() as session:
+        total_result = await session.execute(select(func.count(User.id)))
+        total_users = total_result.scalar() or 0
+
+        vip_result = await session.execute(select(func.count(User.id)).where(User.is_vip == True))
+        vip_users = vip_result.scalar() or 0
+
+        return {
+            'total_users': total_users,
+            'vip_users': vip_users
         }
