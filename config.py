@@ -15,7 +15,8 @@ CLICK_PROVIDER_TOKEN = os.getenv("CLICK_PROVIDER_TOKEN", "")
 MONTHLY_SUB_PRICE = 15000
 
 # Majburiy obuna kanali
-REQUIRED_CHANNEL = "@backend_dev1"
+REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "@backend_dev1")
+
 
 # Bepul foydalanuvchi limitlari
 FREE_VIDEO_LIMIT = 3
