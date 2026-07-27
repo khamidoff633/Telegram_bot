@@ -16,7 +16,7 @@ async def transcribe_voice(file_path: str) -> str:
             
             base64_audio = base64.b64encode(audio_bytes).decode("utf-8")
             
-            mime_type = "audio/ogg" if file_path.endswith(".ogg") else "audio/mp3"
+            mime_type = "audio/ogg" if file_path.endswith((".ogg", ".oga", ".opus")) else "audio/mp3"
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
             
             payload = {
@@ -46,7 +46,7 @@ async def transcribe_voice(file_path: str) -> str:
         except Exception as e:
             print(f"Gemini REST Error: {e}")
 
-    # 2-Ustuvorlik: Groq API
+    # 2-Ustuvorlik: Groq API (Whisper Large V3)
     if GROQ_API_KEY:
         try:
             client = AsyncGroq(api_key=GROQ_API_KEY)

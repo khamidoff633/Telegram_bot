@@ -47,7 +47,7 @@ async def handle_video_download(message: Message):
     url_match = re.search(r'https?://[^\s]+', text)
     url = url_match.group(0) if url_match else text
 
-    # 1. Majburiy obuna tekshiruvi (Hamma foydalanuvchilar uchun strict majburiy)
+    # 1. Majburiy obuna tekshiruvi
     is_subscribed = await check_user_subscription(message.bot, telegram_id)
     if not is_subscribed:
         await message.answer(MANDATORY_SUB_TEXT, reply_markup=get_channel_sub_kb(), parse_mode="HTML")
@@ -72,6 +72,8 @@ async def handle_video_download(message: Message):
         result = await download_video(url, is_vip=user.is_vip)
         file_path = result['file_path']
         raw_title = result.get('title', 'Media Video')
+        meta_artist = result.get('artist')
+        meta_track = result.get('track')
         safe_title = html.escape(clean_song_name(raw_title))
 
         if not os.path.exists(file_path):
@@ -84,7 +86,7 @@ async def handle_video_download(message: Message):
 
         video_file = FSInputFile(file_path)
 
-        # Videoni caption yozuvlarisiz toza yuborish (Inline keyboard bilan)
+        # Videoni caption yozuvlarisiz toza yuborish
         try:
             if user.is_vip:
                 await message.answer_video(video=video_file, caption=None)
@@ -100,14 +102,23 @@ async def handle_video_download(message: Message):
             await message.answer_video(video=video_file, caption=None)
             await increment_video_count(telegram_id)
 
-        # 2-Qadam: AI & YouTube Engine yordamida musiqaning TO'LIQ (ORIGINAL 3+ MINUTE) MP3 versiyasini yuborish!
+        # 2-Qadam: Audiodan TO'LIQ (ORIGINAL 3+ MINUTE) MP3 treki yuklash
         try:
             temp_mp3 = extract_audio_from_local_file(file_path)
             audio_to_send = None
             final_title = safe_title
             final_artist = "VoxMedia AI"
 
-            if temp_mp3 and os.path.exists(temp_mp3):
+            # A. Meta metadata bo'yicha to'liq MP3 trekini yuklash
+            if meta_artist and meta_track:
+                full_meta_song = await download_full_original_song(meta_artist, meta_track)
+                if full_meta_song and os.path.exists(full_meta_song['file_path']):
+                    audio_to_send = full_meta_song['file_path']
+                    final_title = html.escape(full_meta_song['title'])
+                    final_artist = html.escape(full_meta_song['performer'])
+
+            # B. Gemini AI orqali aniqlab to'liq trekini yuklash
+            if not audio_to_send and temp_mp3 and os.path.exists(temp_mp3):
                 song_info = await identify_original_song(temp_mp3)
                 if song_info:
                     artist = song_info['artist']
@@ -118,13 +129,15 @@ async def handle_video_download(message: Message):
                         final_title = html.escape(full_song_data['title'])
                         final_artist = html.escape(full_song_data['performer'])
 
-                if not audio_to_send or not os.path.exists(audio_to_send):
-                    full_title_data = await download_full_song_by_title(raw_title)
-                    if full_title_data and os.path.exists(full_title_data['file_path']):
-                        audio_to_send = full_title_data['file_path']
-                        final_title = html.escape(full_title_data['title'])
-                        final_artist = html.escape(full_title_data['performer'])
+            # C. Video nomi/sarlavhasi bo'yicha YouTube Engine'dan TO'LIQ (3+ min) MP3 treki qidirish
+            if not audio_to_send or not os.path.exists(audio_to_send):
+                full_title_data = await download_full_song_by_title(raw_title)
+                if full_title_data and os.path.exists(full_title_data['file_path']):
+                    audio_to_send = full_title_data['file_path']
+                    final_title = html.escape(full_title_data['title'])
+                    final_artist = html.escape(full_title_data['performer'])
 
+            # D. Zaxira: Videodagi kesilgan audio
             if not audio_to_send or not os.path.exists(audio_to_send):
                 audio_to_send = temp_mp3
 

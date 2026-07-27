@@ -104,11 +104,13 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
                 'file_path': filename,
                 'title': info.get('title', 'Media Video'),
                 'uploader': info.get('uploader', 'VoxMedia Video'),
+                'track': info.get('track'),
+                'artist': info.get('artist'),
+                'description': info.get('description', '')
             }
     except Exception as e:
         print(f"yt-dlp birinchi xato: {e}. Fallback usul o'tkazilmoqda...")
 
-    # Direct Instagram scraper fallback
     if 'instagram.com' in url or 'instagr.am' in url:
         direct_path = _download_instagram_direct(clean_url)
         if direct_path and os.path.exists(direct_path):
@@ -116,9 +118,11 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
                 'file_path': direct_path,
                 'title': 'Instagram Reel',
                 'uploader': 'VoxMedia Video',
+                'track': None,
+                'artist': None,
+                'description': ''
             }
 
-    # Zaxiradagi format variantlari
     ydl_opts_fallback = {
         'format': 'bestaudio/best',
         'outtmpl': output_template,
@@ -135,6 +139,9 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
                 'file_path': filename,
                 'title': info.get('title', 'Media Video'),
                 'uploader': info.get('uploader', 'VoxMedia Video'),
+                'track': info.get('track'),
+                'artist': info.get('artist'),
+                'description': info.get('description', '')
             }
     except Exception as fallback_e:
         print(f"yt-dlp zaxira xatosi: {fallback_e}")
