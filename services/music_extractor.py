@@ -1,6 +1,7 @@
 import os
 import asyncio
 import uuid
+import re
 import base64
 import aiohttp
 import yt_dlp
@@ -69,7 +70,7 @@ async def identify_original_song(file_path: str) -> dict:
         }
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=25) as resp:
+            async with session.post(url, json=payload, timeout=20) as resp:
                 res = await resp.json()
                 if "candidates" in res and len(res["candidates"]) > 0:
                     text = res["candidates"][0]["content"]["parts"][0].get("text", "").strip()
@@ -84,13 +85,17 @@ async def identify_original_song(file_path: str) -> dict:
 
     return None
 
-def _download_full_original_song_sync(artist: str, title: str) -> dict:
+def _download_full_original_song_sync(query_term: str) -> dict:
     """YouTube Android/iOS Engine orqali musiqaning to'liq (3-4 daqiqalik) original MP3 versiyasini yuklab olish"""
+    # Clean query (remove TikTok/Reel noise)
+    cleaned = re.sub(r'[\(\[\{].*?[\)\]\}]', '', query_term)
+    cleaned = re.sub(r'#\w+', '', cleaned).strip()
+
     queries = [
-        f"ytsearch1:{artist} {title} official audio",
-        f"ytsearch1:{artist} {title} original track",
-        f"ytsearch1:{artist} {title} audio",
-        f"ytsearch1:{artist} {title}",
+        f"ytsearch1:{cleaned} official audio",
+        f"ytsearch1:{cleaned} original track",
+        f"ytsearch1:{cleaned} audio",
+        f"ytsearch1:{cleaned}",
     ]
 
     for query in queries:
@@ -117,17 +122,23 @@ def _download_full_original_song_sync(artist: str, title: str) -> dict:
                 if os.path.exists(mp4_filename):
                     filename = mp4_filename
 
-                # Audio trekni MP3 ga o'girish
                 mp3_path = extract_audio_from_local_file(filename)
                 if os.path.exists(filename) and filename != mp3_path:
-                    os.remove(filename)
+                    try:
+                        os.remove(filename)
+                    except Exception:
+                        pass
 
-                print(f"✅ TO'LIQ ORIGINAL MUSIQA YUKLANDI: {title} - {artist} ({info.get('duration')} sec)")
+                duration = info.get('duration', 0)
+                title = info.get('title', cleaned)
+                uploader = info.get('uploader', 'VoxMedia Music')
+
+                print(f"✅ TO'LIQ ORIGINAL MUSIQA YUKLANDI: {title} ({duration} sec)")
                 return {
                     'file_path': mp3_path,
                     'title': title,
-                    'performer': artist,
-                    'duration': info.get('duration', 0)
+                    'performer': uploader,
+                    'duration': duration
                 }
         except Exception as e:
             print(f"Full song download attempt for '{query}' error: {e}")
@@ -135,8 +146,13 @@ def _download_full_original_song_sync(artist: str, title: str) -> dict:
     return None
 
 async def download_full_original_song(artist: str, title: str) -> dict:
+    query_term = f"{artist} {title}".strip()
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _download_full_original_song_sync, artist, title)
+    return await loop.run_in_executor(None, _download_full_original_song_sync, query_term)
+
+async def download_full_song_by_title(video_title: str) -> dict:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _download_full_original_song_sync, video_title)
 
 def _extract_audio_sync(url: str) -> dict:
     file_id = str(uuid.uuid4())[:8]
@@ -155,7 +171,7 @@ def _extract_audio_sync(url: str) -> dict:
             filename = ydl.prepare_filename(info)
             return {
                 'file_path': filename,
-                'title': info.get('title', 'Original Audio'),
+                'title': info.get('title', 'Original Sound'),
                 'uploader': 'VoxMedia AI',
             }
     except Exception as e:

@@ -9,7 +9,8 @@ from services.music_extractor import (
     extract_audio_from_local_file, 
     extract_audio_from_url, 
     identify_original_song,
-    download_full_original_song
+    download_full_original_song,
+    download_full_song_by_title
 )
 from services.subscription import check_user_subscription
 from utils.keyboards import get_subscribe_inline_kb, get_channel_sub_kb
@@ -43,7 +44,6 @@ async def handle_video_download(message: Message):
     telegram_id = message.from_user.id
     text = message.text.strip()
 
-    # Silkani ajratib olish
     url_match = re.search(r'https?://[^\s]+', text)
     url = url_match.group(0) if url_match else text
 
@@ -95,7 +95,7 @@ async def handle_video_download(message: Message):
             )
             await increment_video_count(telegram_id)
 
-        # 2-Qadam: AI yordamida musiqaning TO'LIQ (ORIGINAL 3+ MINUTE) MP3 versiyasini topib yuborish!
+        # 2-Qadam: AI & YouTube Engine yordamida musiqaning TO'LIQ (ORIGINAL 3+ MINUTE) MP3 versiyasini yuborish!
         try:
             temp_mp3 = extract_audio_from_local_file(file_path)
             audio_to_send = None
@@ -103,20 +103,26 @@ async def handle_video_download(message: Message):
             final_artist = "VoxMedia AI"
 
             if temp_mp3 and os.path.exists(temp_mp3):
-                # AI orqali asl muallif va qo'shiq nomini aniqlash (Gemini AI)
+                # 1-Urinish: Gemini AI orqali aniqlash
                 song_info = await identify_original_song(temp_mp3)
                 if song_info:
                     artist = song_info['artist']
                     title = song_info['title']
-                    final_title = html.escape(title)
-                    final_artist = html.escape(artist)
-
-                    # Musiqaning TO'LIQ (Original Full MP3) versiyasini qidirish va yuklash
                     full_song_data = await download_full_original_song(artist, title)
                     if full_song_data and os.path.exists(full_song_data['file_path']):
                         audio_to_send = full_song_data['file_path']
+                        final_title = html.escape(full_song_data['title'])
+                        final_artist = html.escape(full_song_data['performer'])
 
-            # Agar to'liq versiya topilmasa, videoning o'zidagi audioni yuborish
+                # 2-Urinish: Nomi bo'yicha to'liq original MP3 treki qidirish
+                if not audio_to_send or not os.path.exists(audio_to_send):
+                    full_title_data = await download_full_song_by_title(raw_title)
+                    if full_title_data and os.path.exists(full_title_data['file_path']):
+                        audio_to_send = full_title_data['file_path']
+                        final_title = html.escape(full_title_data['title'])
+                        final_artist = html.escape(full_title_data['performer'])
+
+            # 3-Zaxira: Kesilgan mp3
             if not audio_to_send or not os.path.exists(audio_to_send):
                 audio_to_send = temp_mp3
 
@@ -129,19 +135,26 @@ async def handle_video_download(message: Message):
                     caption=None
                 )
 
-                # Temp audio fayllarini o'chirish
                 if audio_to_send != file_path and os.path.exists(audio_to_send):
-                    os.remove(audio_to_send)
+                    try:
+                        os.remove(audio_to_send)
+                    except Exception:
+                        pass
                 if temp_mp3 != file_path and os.path.exists(temp_mp3):
-                    os.remove(temp_mp3)
+                    try:
+                        os.remove(temp_mp3)
+                    except Exception:
+                        pass
         except Exception as audio_err:
             print(f"Auto Full Original Audio Extraction Error: {audio_err}")
 
         await status_msg.delete()
 
-        # Video temp faylini o'chirish
         if os.path.exists(file_path):
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
 
     except Exception as e:
         print(f"Download Error: {e}")
