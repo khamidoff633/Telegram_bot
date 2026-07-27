@@ -3,7 +3,7 @@ import re
 import html
 from aiogram import Router, F
 from aiogram.types import Message, FSInputFile, CallbackQuery
-from database.db import can_user_download_video, increment_video_count, is_admin_user
+from database.db import can_user_download_video, increment_video_count, is_admin_user, get_time_until_reset
 from services.downloader import download_video
 from services.music_extractor import (
     extract_audio_from_local_file, 
@@ -83,10 +83,11 @@ async def handle_video_download(message: Message):
     can_download, remains, user = await can_user_download_video(telegram_id, username)
 
     if not can_download and not is_admin and not user.is_vip:
+        time_left = get_time_until_reset(user.video_reset_at)
         alert_text = (
             "⚠️ <b>Sizning bepul video yuklash limitingiz tugagan!</b>\n\n"
             f"Siz 48 soat ichidagi Bepul <b>{FREE_VIDEO_LIMIT} ta video</b> limitidan foydalanib bo'ldingiz.\n"
-            "48 soatdan keyin limit avtomatik yangilanadi.\n\n"
+            f"⏱️ Limit yangilanishiga <b>{time_left}</b> qoldi.\n\n"
             " Cheksiz va 1080p/4K HD formatda yuklash uchun <b>Obuna Bo'lish</b> tugmasini bosing!"
         )
         await message.answer(alert_text, reply_markup=get_subscribe_inline_kb(url=url), parse_mode="HTML")
@@ -95,7 +96,7 @@ async def handle_video_download(message: Message):
     status_msg = await message.answer("⏳ Video yuklanmoqda...")
 
     try:
-        # 1-Qadam: Videoni yuklash
+        # 1-Qadam: Videoni yuklash (VIP va Admin uchun 1080p/4K, oddiy foydalanuvchiga 480p)
         result = await download_video(url, is_vip=(is_admin or user.is_vip))
         file_path = result['file_path']
         raw_title = result.get('title', 'Media Video')
@@ -113,9 +114,19 @@ async def handle_video_download(message: Message):
 
         video_file = FSInputFile(file_path)
 
-        # Videoni caption yozuvlarisiz toza yuborish
+        # Video caption yozuvi: Admin/VIP uchun toza, oddiy foydalanuvchiga sifat va obuna eslatmasi
+        if is_admin or user.is_vip:
+            video_caption = None
+            video_kb = None
+        else:
+            video_caption = "✨ <i>Maksimal (720p / 1080p HD) va cheksiz yuklashlar uchun <b>Obuna Bo'lish</b> tugmasini bosing!</i>"
+            video_kb = get_subscribe_inline_kb(url=url)
+
         try:
-            await message.answer_video(video=video_file, caption=None)
+            if video_kb:
+                await message.answer_video(video=video_file, caption=video_caption, reply_markup=video_kb, parse_mode="HTML")
+            else:
+                await message.answer_video(video=video_file, caption=None)
         except Exception as vid_err:
             print(f"Answer video err: {vid_err}")
             await message.answer_video(video=video_file, caption=None)
@@ -192,14 +203,15 @@ async def handle_video_download(message: Message):
             except Exception:
                 pass
 
-        # 3-Qadam: 3-video yuborib bo'linganidan so'ng darhol limit tugagani haqida ogohlantirish yuborish
+        # 3-Qadam: 3-video yuborib bo'linganidan so'ng darhol limit tugagani va aniq qolgan soat haqida ogohlantirish yuborish
         if not is_admin and not user.is_vip:
             _, updated_remains, updated_user = await can_user_download_video(telegram_id, username)
             if updated_user.video_count >= FREE_VIDEO_LIMIT:
+                time_left = get_time_until_reset(updated_user.video_reset_at)
                 limit_reached_text = (
                     f"⚠️ <b>Sizning bepul video yuklash limitingiz tugadi ({FREE_VIDEO_LIMIT}/{FREE_VIDEO_LIMIT} ta foydalanildi)!</b>\n\n"
-                    f"48 soatdan keyin limitlar avtomatik yangilanadi.\n"
-                    f" Cheksiz va HD formatda yuklash uchun <b>Obuna Bo'lish</b> tugmasini bosing!"
+                    f"⏱️ Limit yangilanishiga <b>{time_left}</b> qoldi.\n\n"
+                    f" Cheksiz va 1080p HD formatda yuklash uchun <b>Obuna Bo'lish</b> tugmasini bosing!"
                 )
                 await message.answer(limit_reached_text, reply_markup=get_subscribe_inline_kb(url=url), parse_mode="HTML")
 
@@ -207,7 +219,7 @@ async def handle_video_download(message: Message):
         print(f"Download Error: {e}")
         try:
             await status_msg.edit_text(
-                "❌ <b>Videoni yuklab bo'lmadi.</b>\n\n"
+                "❌ <b>Videoni yuklab bo'mladi.</b>\n\n"
                 "Iltimos, silka ochiq (public) post ekanligini tekshiring yoki YouTube Shorts silkasini yuboring!",
                 parse_mode="HTML"
             )

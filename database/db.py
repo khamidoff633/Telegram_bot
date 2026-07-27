@@ -10,14 +10,29 @@ DB_PATH = "bot_database.sqlite"
 engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}", echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-ADMIN_USERNAMES = ["bakhriddin03_05", "bakhridd1n_dev"]
+ADMIN_TELEGRAM_IDS = [1606900140]
+ADMIN_USERNAMES = ["bakhriddin03_05", "bakhridd1n_dev", "bakhriiddin03_05"]
 
 def is_admin_user(telegram_id: int = None, username: str = None) -> bool:
+    if telegram_id and telegram_id in ADMIN_TELEGRAM_IDS:
+        return True
     if username:
         clean = username.lower().lstrip('@')
         if clean in ADMIN_USERNAMES:
             return True
     return False
+
+def get_time_until_reset(reset_at: datetime) -> str:
+    if not reset_at:
+        return "48 soat 0 daqiqa"
+    now = datetime.utcnow()
+    target = reset_at + timedelta(hours=RESET_LIMIT_HOURS)
+    diff = target - now
+    if diff.total_seconds() <= 0:
+        return "0 soat 0 daqiqa"
+    hours = int(diff.total_seconds() // 3600)
+    minutes = int((diff.total_seconds() % 3600) // 60)
+    return f"{hours} soat {minutes} daqiqa"
 
 async def init_db():
     async with engine.begin() as conn:
@@ -146,9 +161,12 @@ async def add_referral_bonus(referrer_id: int):
 async def get_user_limits_info(telegram_id: int, username: str = None) -> dict:
     if is_admin_user(telegram_id, username):
         return {
+            'is_admin': True,
             'is_vip': True,
             'video_remains': 'Cheksiz',
-            'voice_remains': 'Cheksiz'
+            'voice_remains': 'Cheksiz',
+            'video_reset_in': 'Talab qilinmaydi',
+            'voice_reset_in': 'Talab qilinmaydi'
         }
 
     async with async_session() as session:
@@ -156,19 +174,28 @@ async def get_user_limits_info(telegram_id: int, username: str = None) -> dict:
 
         if user.is_vip:
             return {
+                'is_admin': False,
                 'is_vip': True,
                 'video_remains': 'Cheksiz',
-                'voice_remains': 'Cheksiz'
+                'voice_remains': 'Cheksiz',
+                'video_reset_in': 'Talab qilinmaydi',
+                'voice_reset_in': 'Talab qilinmaydi'
             }
 
         await check_and_reset_limits(user, session)
         v_remains = max(0, FREE_VIDEO_LIMIT - user.video_count)
         a_remains = max(0, FREE_VOICE_LIMIT - user.voice_count)
 
+        v_reset = get_time_until_reset(user.video_reset_at)
+        a_reset = get_time_until_reset(user.voice_reset_at)
+
         return {
+            'is_admin': False,
             'is_vip': False,
             'video_remains': v_remains,
-            'voice_remains': a_remains
+            'voice_remains': a_remains,
+            'video_reset_in': v_reset,
+            'voice_reset_in': a_reset
         }
 
 async def get_bot_stats() -> dict:

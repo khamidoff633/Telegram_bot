@@ -120,14 +120,19 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
 
     clean_url = url.split('?')[0] if '?' in url and ('instagram.com' in url or 'instagr.am' in url or 'tiktok.com' in url) else url
 
-    # TikTok zaxira dvigateli
     if 'tiktok.com' in url or 'vt.tiktok.com' in url:
         tt_result = _download_tiktok_direct(url)
         if tt_result and os.path.exists(tt_result['file_path']):
             return tt_result
 
+    # Format selection: Free users get 480p, VIP & Admin get 1080p/4K HD
+    if is_vip:
+        format_spec = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+    else:
+        format_spec = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best'
+
     ydl_opts = {
-        'format': 'best',
+        'format': format_spec,
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
