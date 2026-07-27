@@ -1,20 +1,17 @@
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from config import REQUIRED_CHANNEL
+from database.db import is_admin_user
 
-ADMIN_TELEGRAM_ID = 1606900140
-
-async def check_user_subscription(bot: Bot, user_id: int) -> bool:
+async def check_user_subscription(bot: Bot, user_id: int, username: str = None) -> bool:
     """
-    Senior Developer Smart Subscription Engine:
-    1. Admin (1606900140) -> True (Har doim VIP o'tadi).
-    2. Bot kanalda ADMIN bo'lsa:
-       - Creator / Admin / Member -> True (Kanalga a'zo)
-       - Left / Kicked -> False (A'zo emas)
-    3. Bot kanalda hali ADMIN qilinmagan bo'lsa (member list is inaccessible):
-       - Foydalanuvchilarni cheksiz pop-up takrorlanishidan qutqarish uchun True qaytarib o'tkazadi.
+    Senior Developer Strict Subscription Engine:
+    1. Admin (bakhriddin03_05 / bakhridd1n_dev) -> True (Shartlarsiz har doim VIP va a'zolik talab qilinmaydi).
+    2. Oddiy foydalanuvchilar:
+       - Creator / Admin / Member -> True (Kanalga a'zo, botdan foydalansa bo'ladi)
+       - Left / Kicked -> False (A'zo emas, darhol majburiy obuna oynasi bilan bloklanadi)
     """
-    if user_id == ADMIN_TELEGRAM_ID:
+    if is_admin_user(user_id, username):
         return True
 
     if not REQUIRED_CHANNEL:
@@ -27,16 +24,8 @@ async def check_user_subscription(bot: Bot, user_id: int) -> bool:
         return False
     except (TelegramBadRequest, TelegramForbiddenError) as e:
         err_msg = str(e).lower()
-        if any(kw in err_msg for kw in [
-            "member list is inaccessible",
-            "chat not found",
-            "bot is not a member",
-            "not enough rights",
-            "administrator rights",
-        ]):
-            print(f"⚠️ [Subscription Warning] Bot '{REQUIRED_CHANNEL}' kanalida ADMIN emas! Telegram A'zolikni aniqlay olmadi. Botni kanalda ADMIN qiling!")
-            return True
+        print(f"⚠️ Subscription Check warning for user {user_id}: {err_msg}")
         return False
     except Exception as e:
         print(f"Subscription Check Exception for user {user_id}: {e}")
-        return True
+        return False

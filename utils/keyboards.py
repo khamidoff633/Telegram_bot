@@ -3,21 +3,37 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import REQUIRED_CHANNEL
 
-def get_main_reply_kb():
-    keyboard = [
-        [
-            KeyboardButton(text="🎬 Media Yuklash"),
-            KeyboardButton(text="🎙️ Voice Matnga")
-        ],
-        [
-            KeyboardButton(text="👑 VIP Status"),
-            KeyboardButton(text="🔗 Referal Taklif")
-        ],
-        [
-            KeyboardButton(text="📊 Mening Limitlarim"),
-            KeyboardButton(text="ℹ️ Yordam")
+def get_main_reply_kb(is_admin: bool = False):
+    if is_admin:
+        keyboard = [
+            [
+                KeyboardButton(text="🎬 Media Yuklash"),
+                KeyboardButton(text="🎙️ Voice Matnga")
+            ],
+            [
+                KeyboardButton(text="👥 Foydalanuvchilar Listi"),
+                KeyboardButton(text="📊 Admin Statistika")
+            ],
+            [
+                KeyboardButton(text="📢 Ommaviy Xabar"),
+                KeyboardButton(text="ℹ️ Yordam")
+            ]
         ]
-    ]
+    else:
+        keyboard = [
+            [
+                KeyboardButton(text="🎬 Media Yuklash"),
+                KeyboardButton(text="🎙️ Voice Matnga")
+            ],
+            [
+                KeyboardButton(text="👑 VIP Status"),
+                KeyboardButton(text="🔗 Referal Taklif")
+            ],
+            [
+                KeyboardButton(text="📊 Mening Limitlarim"),
+                KeyboardButton(text="ℹ️ Yordam")
+            ]
+        ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 def get_channel_sub_kb():

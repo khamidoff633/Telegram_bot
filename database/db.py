@@ -10,7 +10,14 @@ DB_PATH = "bot_database.sqlite"
 engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}", echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-ADMIN_TELEGRAM_ID = 1606900140
+ADMIN_USERNAMES = ["bakhriddin03_05", "bakhridd1n_dev"]
+
+def is_admin_user(telegram_id: int = None, username: str = None) -> bool:
+    if username:
+        clean = username.lower().lstrip('@')
+        if clean in ADMIN_USERNAMES:
+            return True
+    return False
 
 async def init_db():
     async with engine.begin() as conn:
@@ -21,7 +28,7 @@ async def get_or_create_user(telegram_id: int, username: str = None, full_name: 
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
 
-        is_owner = (telegram_id == ADMIN_TELEGRAM_ID) or (username and username.lower().lstrip('@') == ADMIN_USERNAME.lower())
+        is_owner = is_admin_user(telegram_id, username)
 
         if not user:
             user = User(
@@ -48,6 +55,9 @@ async def get_or_create_user(telegram_id: int, username: str = None, full_name: 
             if is_owner and not user.is_vip:
                 user.is_vip = True
                 updated = True
+            if not is_owner and user.is_vip:
+                user.is_vip = False
+                updated = True
             if updated:
                 await session.commit()
 
@@ -70,34 +80,19 @@ async def check_and_reset_limits(user: User, session: AsyncSession):
     if updated:
         await session.commit()
 
-async def can_user_download_video(telegram_id: int) -> tuple[bool, int, User]:
-    if telegram_id == ADMIN_TELEGRAM_ID:
-        async with async_session() as session:
-            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
-            user = result.scalar_one_or_none()
-            if not user:
-                user = await get_or_create_user(telegram_id)
-            if not user.is_vip:
-                user.is_vip = True
-                await session.commit()
-            return True, 999999, user
-
+async def can_user_download_video(telegram_id: int, username: str = None) -> tuple[bool, int, User]:
     async with async_session() as session:
-        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
-        user = result.scalar_one_or_none()
+        user = await get_or_create_user(telegram_id, username)
 
-        if not user:
-            user = await get_or_create_user(telegram_id)
-
-        if user.is_vip:
+        if is_admin_user(telegram_id, username) or user.is_vip:
             return True, 999999, user
 
         await check_and_reset_limits(user, session)
         remains = FREE_VIDEO_LIMIT - user.video_count
         return remains > 0, max(0, remains), user
 
-async def increment_video_count(telegram_id: int):
-    if telegram_id == ADMIN_TELEGRAM_ID:
+async def increment_video_count(telegram_id: int, username: str = None):
+    if is_admin_user(telegram_id, username):
         return
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
@@ -106,26 +101,11 @@ async def increment_video_count(telegram_id: int):
             user.video_count += 1
             await session.commit()
 
-async def can_user_convert_voice(telegram_id: int) -> tuple[bool, int, User]:
-    if telegram_id == ADMIN_TELEGRAM_ID:
-        async with async_session() as session:
-            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
-            user = result.scalar_one_or_none()
-            if not user:
-                user = await get_or_create_user(telegram_id)
-            if not user.is_vip:
-                user.is_vip = True
-                await session.commit()
-            return True, 999999, user
-
+async def can_user_convert_voice(telegram_id: int, username: str = None) -> tuple[bool, int, User]:
     async with async_session() as session:
-        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
-        user = result.scalar_one_or_none()
+        user = await get_or_create_user(telegram_id, username)
 
-        if not user:
-            user = await get_or_create_user(telegram_id)
-
-        if user.is_vip:
+        if is_admin_user(telegram_id, username) or user.is_vip:
             return True, 999999, user
 
         await check_and_reset_limits(user, session)
@@ -134,8 +114,8 @@ async def can_user_convert_voice(telegram_id: int) -> tuple[bool, int, User]:
 
 can_user_transcribe_voice = can_user_convert_voice
 
-async def increment_voice_count(telegram_id: int):
-    if telegram_id == ADMIN_TELEGRAM_ID:
+async def increment_voice_count(telegram_id: int, username: str = None):
+    if is_admin_user(telegram_id, username):
         return
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
@@ -163,8 +143,8 @@ async def add_referral_bonus(referrer_id: int):
                 user.video_count -= 1
             await session.commit()
 
-async def get_user_limits_info(telegram_id: int) -> dict:
-    if telegram_id == ADMIN_TELEGRAM_ID:
+async def get_user_limits_info(telegram_id: int, username: str = None) -> dict:
+    if is_admin_user(telegram_id, username):
         return {
             'is_vip': True,
             'video_remains': 'Cheksiz',
@@ -172,10 +152,7 @@ async def get_user_limits_info(telegram_id: int) -> dict:
         }
 
     async with async_session() as session:
-        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
-        user = result.scalar_one_or_none()
-        if not user:
-            user = await get_or_create_user(telegram_id)
+        user = await get_or_create_user(telegram_id, username)
 
         if user.is_vip:
             return {
@@ -206,3 +183,8 @@ async def get_bot_stats() -> dict:
             'total_users': total_users,
             'vip_users': vip_users
         }
+
+async def get_all_users_list() -> list:
+    async with async_session() as session:
+        result = await session.execute(select(User).order_by(User.created_at.desc()).limit(50))
+        return result.scalars().all()

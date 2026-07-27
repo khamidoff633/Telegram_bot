@@ -1,44 +1,43 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
-from config import ADMIN_USERNAME
-from database.db import get_bot_stats
+from database.db import get_bot_stats, get_all_users_list, is_admin_user
 from utils.keyboards import get_admin_keyboard
 
 admin_router = Router()
 
-def is_admin(username: str) -> bool:
-    if not username:
-        return False
-    return username.lower().lstrip('@') == ADMIN_USERNAME.lower()
-
 @admin_router.message(Command("admin"))
-async def cmd_admin(message: Message):
-    if not is_admin(message.from_user.username):
-        await message.answer("❌ Bu buyruq faqat bot admini uchun moslangan!")
+@admin_router.message(F.text == "📊 Admin Statistika")
+async def cmd_admin_stats(message: Message):
+    if not is_admin_user(message.from_user.id, message.from_user.username):
+        await message.answer("❌ Bu bo'lim faqat bot admini uchun moslangan!")
         return
 
     stats = await get_bot_stats()
 
     text = (
-        f"👑 **Admin Boshqaruv Paneli** (@{ADMIN_USERNAME})\n\n"
-        f"👥 Jami foydalanuvchilar: **{stats['total_users']} ta**\n"
-        f"🌟 VIP obunachilar: **{stats['vip_users']} ta**\n"
+        f"👑 <b>Admin Boshqaruv Paneli</b>\n\n"
+        f"👥 <b>Jami foydalanuvchilar:</b> {stats['total_users']} ta\n"
+        f"🌟 <b>VIP obunachilar:</b> {stats['vip_users']} ta\n"
     )
 
-    await message.answer(text, reply_markup=get_admin_keyboard(), parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
 
-@admin_router.callback_query(F.data == "admin_stats")
-async def process_admin_stats(callback: CallbackQuery):
-    if not is_admin(callback.from_user.username):
-        await callback.answer("Ruxsat yo'q", show_alert=True)
+@admin_router.message(F.text == "👥 Foydalanuvchilar Listi")
+async def btn_admin_users_list(message: Message):
+    if not is_admin_user(message.from_user.id, message.from_user.username):
+        await message.answer("❌ Ruxsat yo'q!")
         return
 
-    stats = await get_bot_stats()
-    text = (
-        f"📊 **Bot Statistikasi:**\n\n"
-        f"👤 Barcha foydalanuvchilar: {stats['total_users']}\n"
-        f"👑 VIP obunachilar: {stats['vip_users']}"
-    )
-    await callback.message.answer(text, parse_mode="Markdown")
-    await callback.answer()
+    users = await get_all_users_list()
+    if not users:
+        await message.answer("ℹ️ Hali foydalanuvchilar yo'q.")
+        return
+
+    text_lines = ["👥 <b>So'nggi Foydalanuvchilar Ro'yxati:</b>\n"]
+    for u in users[:25]:
+        uname = f"@{u.username}" if u.username else "User"
+        vip_tag = "👑 VIP" if u.is_vip else "🆓 Free"
+        text_lines.append(f"• {u.full_name or 'Foydalanuvchi'} ({uname}) - ID: <code>{u.telegram_id}</code> | {vip_tag}")
+
+    await message.answer("\n".join(text_lines), parse_mode="HTML")
