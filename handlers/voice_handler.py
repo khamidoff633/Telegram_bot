@@ -52,7 +52,7 @@ async def handle_voice_message(message: Message):
         file_obj = message.voice or message.audio
         file_info = await message.bot.get_file(file_obj.file_id)
         
-        file_ext = ".ogg" if message.voice else ".mp3"
+        file_ext = os.path.splitext(file_info.file_path)[1] if file_info and file_info.file_path else (".ogg" if message.voice else ".mp3")
         file_path = os.path.join(VOICE_DIR, f"{file_obj.file_id}{file_ext}")
 
         await message.bot.download_file(file_info.file_path, destination=file_path)
@@ -60,7 +60,11 @@ async def handle_voice_message(message: Message):
         transcribed_text = await transcribe_voice(file_path)
 
         if os.path.exists(file_path):
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+
 
         if transcribed_text:
             safe_text = html.escape(transcribed_text)
