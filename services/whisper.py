@@ -35,26 +35,121 @@ async def convert_audio_to_wav(input_path: str) -> str:
     return input_path
 
 def _transcribe_google_web_speech_sync(wav_path: str) -> str:
-    """Bepul Google Web Speech API (API Key talab qilinmaydigan 100% zaxira tizimi)"""
+    """Bepul Google Web Speech API (Chunking va Smart Language Auto-Detection bilan 100% to'liq va tiniq o'giruvchi dvigatel)"""
+    if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 100:
+        return None
+
+    import subprocess
+    import speech_recognition as sr
+
+    temp_dir = os.path.join(os.path.dirname(wav_path), f"chunks_{os.path.basename(wav_path)}")
+    os.makedirs(temp_dir, exist_ok=True)
+    chunk_pattern = os.path.join(temp_dir, "chunk_%03d.wav")
+
+    # 1. FFmpeg yordamida audioni 25-soniyalik bo'laklarga ajratish (barcha 3-5 minutlik audiolarni to'liq o'girish uchun)
+    split_cmd = [
+        "ffmpeg", "-y", "-i", wav_path,
+        "-f", "segment",
+        "-segment_time", "25",
+        "-c", "copy",
+        chunk_pattern
+    ]
     try:
-        import speech_recognition as sr
-        r = sr.Recognizer()
-        with sr.AudioFile(wav_path) as source:
-            audio_data = r.record(source)
-        
-        # O'zbek, rus va ingliz tillarida navbatma-navbat urinish
-        languages = ["uz-UZ", "ru-RU", "en-US"]
-        for lang in languages:
+        subprocess.run(split_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except Exception as e:
+        logging.warning(f"⚠️ Chunking ffmpeg error: {e}")
+        import shutil
+        shutil.copy(wav_path, os.path.join(temp_dir, "chunk_000.wav"))
+
+    chunk_files = sorted([
+        os.path.join(temp_dir, f) for f in os.listdir(temp_dir) 
+        if f.startswith("chunk_") and f.endswith(".wav")
+    ])
+
+    if not chunk_files:
+        return None
+
+    r = sr.Recognizer()
+
+    # 2. Birinchi bo'lak orqali audio tilini aqlli aniqlash (en-US, uz-UZ, ru-RU)
+    detected_lang = "en-US"
+    first_chunk = chunk_files[0]
+    
+    try:
+        with sr.AudioFile(first_chunk) as source:
+            audio_sample = r.record(source)
+
+        lang_scores = {}
+        for lang in ["en-US", "uz-UZ", "ru-RU"]:
             try:
-                text = r.recognize_google(audio_data, language=lang)
-                if text and len(text.strip()) > 0:
-                    logging.info(f"✅ Google Free Web Speech API muvaffaqiyatli ({lang}): {text[:50]}")
-                    return text.strip()
+                txt = r.recognize_google(audio_sample, language=lang)
+                if txt and len(txt.strip()) > 0:
+                    score = len(txt.split())
+                    lang_scores[lang] = (score, txt)
             except Exception:
                 continue
+
+        if lang_scores:
+            if "en-US" in lang_scores:
+                detected_lang = "en-US"
+            else:
+                detected_lang = max(lang_scores, key=lambda k: lang_scores[k][0])
+
+        logging.info(f"🌐 Audio uchun aniqlangan asosiy til: {detected_lang}")
+
     except Exception as e:
-        logging.warning(f"⚠️ Google Free Web Speech API xatosi: {e}")
+        logging.warning(f"⚠️ Language detection warning: {e}")
+
+    # 3. Barcha bo'laklarni aniqlangan til bo'yicha ketma-ket to'liq o'girish
+    full_transcription_parts = []
+
+    for idx, chunk_file in enumerate(chunk_files):
+        try:
+            with sr.AudioFile(chunk_file) as source:
+                audio_data = r.record(source)
+
+            chunk_text = None
+            try:
+                res = r.recognize_google(audio_data, language=detected_lang)
+                if res and len(res.strip()) > 0:
+                    chunk_text = res.strip()
+            except Exception:
+                for alt_lang in ["en-US", "uz-UZ", "ru-RU"]:
+                    if alt_lang != detected_lang:
+                        try:
+                            res = r.recognize_google(audio_data, language=alt_lang)
+                            if res and len(res.strip()) > 0:
+                                chunk_text = res.strip()
+                                break
+                        except Exception:
+                            continue
+
+            if chunk_text:
+                full_transcription_parts.append(chunk_text)
+
+        except Exception as e:
+            logging.warning(f"⚠️ Chunk {idx} transcription error: {e}")
+        finally:
+            if os.path.exists(chunk_file):
+                try:
+                    os.remove(chunk_file)
+                except Exception:
+                    pass
+
+    if os.path.exists(temp_dir):
+        try:
+            import shutil
+            shutil.rmtree(temp_dir)
+        except Exception:
+            pass
+
+    if full_transcription_parts:
+        final_full_text = " ".join(full_transcription_parts).strip()
+        logging.info(f"✅ To'liq Audio Transkripsiyasi ({len(chunk_files)} bo'lakdan): {len(final_full_text)} belgi")
+        return final_full_text
+
     return None
+
 
 async def polish_transcribed_text(raw_text: str) -> str:
     """Raw speech-to-text natijasini tinish belgilari, grammatika va paragraflar bilan mukammal va tiniq holatga keltirish"""
