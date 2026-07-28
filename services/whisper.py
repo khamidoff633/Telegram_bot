@@ -56,6 +56,41 @@ def _transcribe_google_web_speech_sync(wav_path: str) -> str:
         logging.warning(f"⚠️ Google Free Web Speech API xatosi: {e}")
     return None
 
+async def polish_transcribed_text(raw_text: str) -> str:
+    """Raw speech-to-text natijasini tinish belgilari, grammatika va paragraflar bilan mukammal va tiniq holatga keltirish"""
+    if not raw_text or len(raw_text.strip()) < 15 or not GEMINI_API_KEY:
+        return raw_text
+
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        prompt = (
+            "Siz professional matn muharririsiz. Quyidagi ovozdan olingan (speech-to-text) xom matnni "
+            "ma'nosini zarracha o'zgartirmasdan, imlo va tinish belgilarini (punktuatsiya), "
+            "katta-kichik harflarni va tushunarsiz fonetik xatolarni to'g'rilab, chiroyli va o'qishga o'ta qulay mukammal matn va paragraflar holatiga keltiring.\n"
+            "Faqat to'g'rilangan toza matnni qaytaring, hech qanday ortiqcha izoh yozmang.\n\n"
+            f"XOM MATN:\n{raw_text}"
+        )
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 8192}
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=20) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        text_chunks = [p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p]
+                        polished = "".join(text_chunks).strip()
+                        if polished:
+                            logging.info("✨ AI Text Polishing muvaffaqiyatli amalga oshirildi")
+                            return polished
+    except Exception as e:
+        logging.warning(f"⚠️ Text polishing skipped: {e}")
+
+    return raw_text
+
 async def transcribe_voice(file_path: str) -> str:
     """Ovozli faylni (voice note/audio) aniq matnga aylantirish (Senior Multi-Engine Tizimi)"""
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
@@ -64,6 +99,8 @@ async def transcribe_voice(file_path: str) -> str:
 
     # 0-Qadam: Audio faylni AI uchun universal 16kHz mono WAV formatiga o'tkazish
     target_path = await convert_audio_to_wav(file_path)
+
+    raw_result = None
 
     try:
         # 1-Ustuvorlik: Google Gemini REST API (gemini-1.5-flash / gemini-2.0-flash)
@@ -114,7 +151,8 @@ async def transcribe_voice(file_path: str) -> str:
                                         text = "".join(text_chunks).strip()
                                         if text:
                                             logging.info(f"✅ Gemini Voice Transcription muvaffaqiyatli model: {model_name}")
-                                            return text
+                                            raw_result = text
+                                            break
                                 else:
                                     err_text = await resp.text()
                                     logging.warning(f"⚠️ Gemini API HTTP {resp.status} ({model_name}): {err_text[:200]}")
@@ -125,7 +163,7 @@ async def transcribe_voice(file_path: str) -> str:
                 logging.error(f"❌ Gemini REST Xatosi: {e}")
 
         # 2-Ustuvorlik: Groq API (Whisper Large V3)
-        if GROQ_API_KEY:
+        if not raw_result and GROQ_API_KEY:
             try:
                 client = AsyncGroq(api_key=GROQ_API_KEY)
                 with open(target_path, "rb") as file:
@@ -136,12 +174,12 @@ async def transcribe_voice(file_path: str) -> str:
                     )
                     if transcription:
                         logging.info("✅ Groq Whisper Voice Transcription muvaffaqiyatli")
-                        return str(transcription).strip()
+                        raw_result = str(transcription).strip()
             except Exception as e:
                 logging.warning(f"⚠️ Groq Whisper Xatosi: {e}")
 
         # 3-Ustuvorlik: OpenAI Whisper API
-        if OPENAI_API_KEY:
+        if not raw_result and OPENAI_API_KEY:
             try:
                 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
                 with open(target_path, "rb") as file:
@@ -152,15 +190,18 @@ async def transcribe_voice(file_path: str) -> str:
                     )
                     if transcription:
                         logging.info("✅ OpenAI Whisper Voice Transcription muvaffaqiyatli")
-                        return str(transcription).strip()
+                        raw_result = str(transcription).strip()
             except Exception as e:
                 logging.warning(f"⚠️ OpenAI Whisper Xatosi: {e}")
 
         # 4-Ustuvorlik: Google Free Web Speech API (Umrbod bepul 100% Zaxira Dvigateli)
-        loop = asyncio.get_event_loop()
-        free_text = await loop.run_in_executor(None, _transcribe_google_web_speech_sync, target_path)
-        if free_text:
-            return free_text
+        if not raw_result:
+            loop = asyncio.get_event_loop()
+            raw_result = await loop.run_in_executor(None, _transcribe_google_web_speech_sync, target_path)
+
+        # AI Text Polishing: Matnni tinish belgilari, grammatika va chiroyli formatlash bilan mukammallashtirish
+        if raw_result:
+            return await polish_transcribed_text(raw_result)
 
     finally:
         # Vaqtinchalik konvertatsiya qilingan faylni o'chirish
@@ -171,5 +212,6 @@ async def transcribe_voice(file_path: str) -> str:
                 pass
 
     return None
+
 
 
