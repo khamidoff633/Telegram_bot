@@ -1,7 +1,7 @@
 import os
 import html
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from database.db import can_user_transcribe_voice, increment_voice_count, is_admin_user
 from services.whisper import transcribe_voice
 from services.subscription import check_user_subscription
@@ -19,6 +19,60 @@ MANDATORY_SUB_TEXT = (
 
 VOICE_DIR = "voice_downloads"
 os.makedirs(VOICE_DIR, exist_ok=True)
+
+async def send_transcription_results(message: Message, status_msg: Message, transcribed_text: str):
+    """Barcha 1, 5, 10 va 20 minutlik audiolarning matnlarini Telegram chekloviga tushirmasdan bo'lib yuborish"""
+    safe_text = html.escape(transcribed_text)
+    header = "📝 <b>Ovozli xabar matni:</b>\n\n"
+    
+    # 1. Qisqa matnlar uchun (3500 belgigacha)
+    if len(safe_text) <= 3500:
+        response_text = f"{header}<i>\"{safe_text}\"</i>"
+        await status_msg.edit_text(response_text, parse_mode="HTML")
+        return
+
+    # 2. Uzun matnlar uchun (5-20 minutlik audiolar): 3500 belgilik bo'laklarga ajratish
+    chunks = []
+    curr = safe_text
+    while len(curr) > 3500:
+        split_pos = curr.rfind(" ", 0, 3500)
+        if split_pos == -1 or split_pos < 2500:
+            split_pos = 3500
+        chunks.append(curr[:split_pos].strip())
+        curr = curr[split_pos:].strip()
+    if curr:
+        chunks.append(curr)
+
+    # Birinchi bo'lakni status xabariga tahrirlash
+    first_part = f"📝 <b>Ovozli xabar matni (1/{len(chunks)}-Qism):</b>\n\n<i>\"{chunks[0]}\"</i>"
+    await status_msg.edit_text(first_part, parse_mode="HTML")
+
+    # Qolgan bo'laklarni ketma-ket yuborish
+    for idx, chunk in enumerate(chunks[1:], start=2):
+        part_text = f"📝 <b>( {idx}/{len(chunks)}-Qism ):</b>\n\n<i>\"{chunk}\"</i>"
+        await message.answer(part_text, parse_mode="HTML")
+
+    # 3. Agar matn juda uzun bo'lsa (7000+ belgi), foydalanuvchiga to'liq .txt faylini ham taqdim etish
+    if len(transcribed_text) > 7000:
+        txt_path = os.path.join(VOICE_DIR, f"Transcript_{message.message_id}.txt")
+        try:
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(transcribed_text)
+            
+            doc_file = FSInputFile(txt_path, filename="Ovozli_Matn_Transcript.txt")
+            await message.answer_document(
+                document=doc_file,
+                caption="📄 <b>Uzun audio matnining to'liq fayli (.txt)</b>",
+                parse_mode="HTML"
+            )
+        except Exception as doc_err:
+            print(f"Doc export error: {doc_err}")
+        finally:
+            if os.path.exists(txt_path):
+                try:
+                    os.remove(txt_path)
+                except Exception:
+                    pass
 
 @voice_router.message(F.voice | F.audio)
 async def handle_voice_message(message: Message):
@@ -46,7 +100,7 @@ async def handle_voice_message(message: Message):
         await message.answer(alert_text, reply_markup=get_subscribe_inline_kb(), parse_mode="HTML")
         return
 
-    status_msg = await message.answer("🎙️ Ovozli xabar eshitilmoqda va matnga o'girilmoqda, iltimos kuting...")
+    status_msg = await message.answer("🎙️ Ovozli/Audio fayl tahlil qilinmoqda, iltimos kuting...")
 
     try:
         file_obj = message.voice or message.audio
@@ -65,14 +119,8 @@ async def handle_voice_message(message: Message):
             except Exception:
                 pass
 
-
         if transcribed_text:
-            safe_text = html.escape(transcribed_text)
-            response_text = (
-                f"📝 <b>Ovozli xabar matni:</b>\n\n"
-                f"<i>\"{safe_text}\"</i>"
-            )
-            await status_msg.edit_text(response_text, parse_mode="HTML")
+            await send_transcription_results(message, status_msg, transcribed_text)
 
             if not is_admin and not user.is_vip:
                 await increment_voice_count(telegram_id, username)
@@ -89,4 +137,9 @@ async def handle_voice_message(message: Message):
 
     except Exception as e:
         print(f"Voice Handler Error: {e}")
-        await status_msg.edit_text("❌ Ovozli xabarni matnga o'girishda xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.")
+        try:
+            await status_msg.edit_text("❌ Ovozli xabarni matnga o'girishda xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.")
+        except Exception:
+            pass
+
+

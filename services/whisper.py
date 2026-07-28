@@ -34,28 +34,29 @@ async def convert_audio_to_wav(input_path: str) -> str:
         logging.warning(f"⚠️ FFmpeg ishga tushirishda xato (original fayldan foydalaniladi): {e}")
     return input_path
 
-def _transcribe_google_web_speech_sync(wav_path: str) -> str:
-    """Bepul Google Web Speech API (Chunking va Smart Language Auto-Detection bilan 100% to'liq va tiniq o'giruvchi dvigatel)"""
+async def _transcribe_google_web_speech_async(wav_path: str) -> str:
+
+    """Bepul Google Web Speech API (Parallel Async Chunking & Smart Language Auto-Detection bilan 20+ minutlik audiolarni 100% to'liq o'giruvchi dvigatel)"""
     if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 100:
         return None
 
-    import subprocess
     import speech_recognition as sr
 
     temp_dir = os.path.join(os.path.dirname(wav_path), f"chunks_{os.path.basename(wav_path)}")
     os.makedirs(temp_dir, exist_ok=True)
     chunk_pattern = os.path.join(temp_dir, "chunk_%03d.wav")
 
-    # 1. FFmpeg yordamida audioni 25-soniyalik bo'laklarga ajratish (barcha 3-5 minutlik audiolarni to'liq o'girish uchun)
+    # 1. FFmpeg yordamida audioni 30-soniyalik bo'laklarga ajratish
     split_cmd = [
         "ffmpeg", "-y", "-i", wav_path,
         "-f", "segment",
-        "-segment_time", "25",
+        "-segment_time", "30",
         "-c", "copy",
         chunk_pattern
     ]
     try:
-        subprocess.run(split_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        proc = await asyncio.create_subprocess_exec(*split_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        await proc.communicate()
     except Exception as e:
         logging.warning(f"⚠️ Chunking ffmpeg error: {e}")
         import shutil
@@ -70,72 +71,69 @@ def _transcribe_google_web_speech_sync(wav_path: str) -> str:
         return None
 
     r = sr.Recognizer()
+    loop = asyncio.get_event_loop()
 
     # 2. Birinchi bo'lak orqali audio tilini aqlli aniqlash (en-US, uz-UZ, ru-RU)
-    detected_lang = "en-US"
     first_chunk = chunk_files[0]
     
-    try:
-        with sr.AudioFile(first_chunk) as source:
-            audio_sample = r.record(source)
-
-        lang_scores = {}
-        for lang in ["en-US", "uz-UZ", "ru-RU"]:
-            try:
-                txt = r.recognize_google(audio_sample, language=lang)
-                if txt and len(txt.strip()) > 0:
-                    score = len(txt.split())
-                    lang_scores[lang] = (score, txt)
-            except Exception:
-                continue
-
-        if lang_scores:
-            if "en-US" in lang_scores:
-                detected_lang = "en-US"
-            else:
-                detected_lang = max(lang_scores, key=lambda k: lang_scores[k][0])
-
-        logging.info(f"🌐 Audio uchun aniqlangan asosiy til: {detected_lang}")
-
-    except Exception as e:
-        logging.warning(f"⚠️ Language detection warning: {e}")
-
-    # 3. Barcha bo'laklarni aniqlangan til bo'yicha ketma-ket to'liq o'girish
-    full_transcription_parts = []
-
-    for idx, chunk_file in enumerate(chunk_files):
+    def _detect_lang_sync():
         try:
-            with sr.AudioFile(chunk_file) as source:
-                audio_data = r.record(source)
-
-            chunk_text = None
-            try:
-                res = r.recognize_google(audio_data, language=detected_lang)
-                if res and len(res.strip()) > 0:
-                    chunk_text = res.strip()
-            except Exception:
-                for alt_lang in ["en-US", "uz-UZ", "ru-RU"]:
-                    if alt_lang != detected_lang:
-                        try:
-                            res = r.recognize_google(audio_data, language=alt_lang)
-                            if res and len(res.strip()) > 0:
-                                chunk_text = res.strip()
-                                break
-                        except Exception:
-                            continue
-
-            if chunk_text:
-                full_transcription_parts.append(chunk_text)
-
-        except Exception as e:
-            logging.warning(f"⚠️ Chunk {idx} transcription error: {e}")
-        finally:
-            if os.path.exists(chunk_file):
+            with sr.AudioFile(first_chunk) as source:
+                audio_sample = r.record(source)
+            lang_scores = {}
+            for lang in ["en-US", "uz-UZ", "ru-RU"]:
                 try:
-                    os.remove(chunk_file)
+                    txt = r.recognize_google(audio_sample, language=lang)
+                    if txt and len(txt.strip()) > 0:
+                        lang_scores[lang] = len(txt.split())
                 except Exception:
-                    pass
+                    continue
+            if lang_scores:
+                if "en-US" in lang_scores:
+                    return "en-US"
+                return max(lang_scores, key=lang_scores.get)
+        except Exception:
+            pass
+        return "en-US"
 
+    detected_lang = await loop.run_in_executor(None, _detect_lang_sync)
+    logging.info(f"🌐 20-Min Audio Engine Detected Language: {detected_lang}")
+
+    # 3. Parallel Async Chunk Processing (Barcha 20-minutlik bo'laklar parallel ravishda soniyalarda o'giriladi)
+    semaphore = asyncio.Semaphore(6)
+
+    async def _transcribe_single_chunk(chunk_path: str) -> str:
+        async with semaphore:
+            def _recognize_sync():
+                try:
+                    with sr.AudioFile(chunk_path) as source:
+                        audio = r.record(source)
+                    return r.recognize_google(audio, language=detected_lang)
+                except Exception:
+                    for alt in ["en-US", "uz-UZ", "ru-RU"]:
+                        if alt != detected_lang:
+                            try:
+                                with sr.AudioFile(chunk_path) as source:
+                                    audio = r.record(source)
+                                return r.recognize_google(audio, language=alt)
+                            except Exception:
+                                pass
+                    return ""
+
+            try:
+                res = await loop.run_in_executor(None, _recognize_sync)
+                return res.strip() if res else ""
+            finally:
+                if os.path.exists(chunk_path):
+                    try:
+                        os.remove(chunk_path)
+                    except Exception:
+                        pass
+
+    tasks = [_transcribe_single_chunk(cf) for cf in chunk_files]
+    results = await asyncio.gather(*tasks)
+
+    # Bo'laklar papkasini tozalash
     if os.path.exists(temp_dir):
         try:
             import shutil
@@ -143,13 +141,12 @@ def _transcribe_google_web_speech_sync(wav_path: str) -> str:
         except Exception:
             pass
 
-    if full_transcription_parts:
-        final_full_text = " ".join(full_transcription_parts).strip()
-        logging.info(f"✅ To'liq Audio Transkripsiyasi ({len(chunk_files)} bo'lakdan): {len(final_full_text)} belgi")
-        return final_full_text
+    full_text = " ".join([res for res in results if res]).strip()
+    if full_text:
+        logging.info(f"✅ To'liq Long Audio Transkripsiyasi ({len(chunk_files)} bo'lakdan): {len(full_text)} belgi")
+        return full_text
 
     return None
-
 
 async def polish_transcribed_text(raw_text: str) -> str:
     """Raw speech-to-text natijasini tinish belgilari, grammatika va paragraflar bilan mukammal va tiniq holatga keltirish"""
@@ -170,7 +167,7 @@ async def polish_transcribed_text(raw_text: str) -> str:
             "generationConfig": {"temperature": 0.2, "maxOutputTokens": 8192}
         }
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=20) as resp:
+            async with session.post(url, json=payload, timeout=30) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     candidates = data.get("candidates", [])
@@ -235,7 +232,7 @@ async def transcribe_voice(file_path: str) -> str:
                     for model_name in models_to_try:
                         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
                         try:
-                            async with session.post(url, json=payload, timeout=45) as resp:
+                            async with session.post(url, json=payload, timeout=120) as resp:
                                 if resp.status == 200:
                                     result = await resp.json()
                                     if "candidates" in result and len(result["candidates"]) > 0:
@@ -289,10 +286,9 @@ async def transcribe_voice(file_path: str) -> str:
             except Exception as e:
                 logging.warning(f"⚠️ OpenAI Whisper Xatosi: {e}")
 
-        # 4-Ustuvorlik: Google Free Web Speech API (Umrbod bepul 100% Zaxira Dvigateli)
+        # 4-Ustuvorlik: Google Free Web Speech API (Parallel Async Engine)
         if not raw_result:
-            loop = asyncio.get_event_loop()
-            raw_result = await loop.run_in_executor(None, _transcribe_google_web_speech_sync, target_path)
+            raw_result = await _transcribe_google_web_speech_async(target_path)
 
         # AI Text Polishing: Matnni tinish belgilari, grammatika va chiroyli formatlash bilan mukammallashtirish
         if raw_result:
@@ -307,6 +303,7 @@ async def transcribe_voice(file_path: str) -> str:
                 pass
 
     return None
+
 
 
 
