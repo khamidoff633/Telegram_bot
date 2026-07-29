@@ -113,7 +113,63 @@ def _download_tiktok_direct(url: str) -> dict:
         print(f"TikTok Direct Scrape Error: {e}")
     return None
 
-def _download_video_sync(url: str, is_vip: bool = False) -> dict:
+import subprocess
+import json
+
+def get_video_dimensions(file_path: str) -> dict:
+    """ffprobe yordamida videoning aniq width, height va duration qiymatlarini olish"""
+    cmd = [
+        "ffprobe", "-v", "quiet",
+        "-print_format", "json",
+        "-show_streams", "-show_format",
+        file_path
+    ]
+    try:
+        res = subprocess.check_output(cmd).decode('utf-8')
+        data = json.loads(res)
+        duration = int(float(data.get('format', {}).get('duration', 0)))
+        width, height = 0, 0
+        for stream in data.get('streams', []):
+            if stream.get('codec_type') == 'video':
+                width = stream.get('width', 0)
+                height = stream.get('height', 0)
+                break
+        return {'width': width, 'height': height, 'duration': duration}
+    except Exception:
+        return {'width': 0, 'height': 0, 'duration': 0}
+
+def normalize_video_for_telegram(input_path: str) -> str:
+    """Videoni Telegram pleyerida qotib qolmasligi (rasm kabi muzlab qolmasligi) uchun H.264 + AAC + yuv420p + faststart formatiga o'tkazish"""
+    if not os.path.exists(input_path) or os.path.getsize(input_path) < 1000:
+        return input_path
+
+    fixed_path = os.path.splitext(input_path)[0] + "_telegram.mp4"
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "22",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        fixed_path
+    ]
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if proc.returncode == 0 and os.path.exists(fixed_path) and os.path.getsize(fixed_path) > 1000:
+            try:
+                os.remove(input_path)
+            except Exception:
+                pass
+            return fixed_path
+    except Exception as e:
+        print(f"Video Normalize Error: {e}")
+
+    return input_path
+
+def _download_video_sync(url: str, user_role: str = "user") -> dict:
     ensure_cookies_file()
     file_id = str(uuid.uuid4())[:8]
     output_template = os.path.join(DOWNLOAD_DIR, f"video_{file_id}.%(ext)s")
@@ -123,11 +179,17 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
     if 'tiktok.com' in url or 'vt.tiktok.com' in url:
         tt_result = _download_tiktok_direct(url)
         if tt_result and os.path.exists(tt_result['file_path']):
+            tt_result['file_path'] = normalize_video_for_telegram(tt_result['file_path'])
             return tt_result
 
-    # Format selection: Free users get 480p, VIP & Admin get 1080p/4K HD
-    if is_vip:
-        format_spec = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+    # Aniq Sifat mezonlari:
+    # - Oddiy foydalanuvchi: 480p
+    # - VIP mijoz: 720p - 1080p
+    # - Admin: 1080p Full HD
+    if user_role == "admin":
+        format_spec = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best'
+    elif user_role == "vip":
+        format_spec = 'bestvideo[height<=1080][height>=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio/best[ext=mp4]/best'
     else:
         format_spec = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best'
 
@@ -152,6 +214,8 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
             if os.path.exists(mp4_filename):
                 filename = mp4_filename
 
+            filename = normalize_video_for_telegram(filename)
+
             return {
                 'file_path': filename,
                 'title': info.get('title', 'Media Video'),
@@ -166,6 +230,7 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
     if 'instagram.com' in url or 'instagr.am' in url:
         direct_result = _download_instagram_direct(clean_url)
         if direct_result and os.path.exists(direct_result['file_path']):
+            direct_result['file_path'] = normalize_video_for_telegram(direct_result['file_path'])
             return direct_result
 
     ydl_opts_fallback = {
@@ -185,6 +250,8 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
             if os.path.exists(mp4_filename):
                 filename = mp4_filename
 
+            filename = normalize_video_for_telegram(filename)
+
             return {
                 'file_path': filename,
                 'title': info.get('title', 'Media Video'),
@@ -198,6 +265,7 @@ def _download_video_sync(url: str, is_vip: bool = False) -> dict:
 
     raise Exception("Videoni yuklab bo'lmadi.")
 
-async def download_video(url: str, is_vip: bool = False) -> dict:
+async def download_video(url: str, user_role: str = "user") -> dict:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _download_video_sync, url, is_vip)
+    return await loop.run_in_executor(None, _download_video_sync, url, user_role)
+

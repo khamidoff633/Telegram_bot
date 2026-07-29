@@ -4,7 +4,7 @@ import html
 from aiogram import Router, F
 from aiogram.types import Message, FSInputFile, CallbackQuery
 from database.db import can_user_download_video, increment_video_count, is_admin_user, get_time_until_reset
-from services.downloader import download_video
+from services.downloader import download_video, get_video_dimensions
 from services.music_extractor import (
     extract_audio_from_local_file, 
     extract_audio_from_url, 
@@ -17,6 +17,8 @@ from utils.keyboards import get_subscribe_inline_kb, get_channel_sub_kb
 from config import REQUIRED_CHANNEL, FREE_VIDEO_LIMIT
 
 downloader_router = Router()
+
+
 
 MANDATORY_SUB_TEXT = (
     f"⚠️ <b>Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling!</b>\n\n"
@@ -116,8 +118,12 @@ async def handle_video_download(message: Message):
     status_msg = await message.answer("⏳ Video yuklanmoqda...")
 
     try:
-        # 1-Qadam: Videoni yuklash (VIP va Admin uchun 1080p/4K, oddiy foydalanuvchiga 480p)
-        result = await download_video(url, is_vip=(is_admin or user.is_vip))
+        # User Role belgilash: Admin (1080p), VIP (720p-1080p), Free User (480p)
+
+        user_role = "admin" if is_admin else ("vip" if user.is_vip else "user")
+
+        # 1-Qadam: Videoni yuklash (Admin=1080p, VIP=720p-1080p, Free=480p)
+        result = await download_video(url, user_role=user_role)
         file_path = result['file_path']
         raw_title = result.get('title', 'Media Video')
         meta_artist = result.get('artist')
@@ -133,6 +139,11 @@ async def handle_video_download(message: Message):
             return
 
         video_file = FSInputFile(file_path)
+        meta = get_video_dimensions(file_path)
+
+        v_width = meta['width'] if meta.get('width', 0) > 0 else None
+        v_height = meta['height'] if meta.get('height', 0) > 0 else None
+        v_duration = meta['duration'] if meta.get('duration', 0) > 0 else None
 
         # Video caption yozuvi: Admin/VIP uchun toza, oddiy foydalanuvchiga sifat va obuna eslatmasi
         if is_admin or user.is_vip:
@@ -143,13 +154,24 @@ async def handle_video_download(message: Message):
             video_kb = get_subscribe_inline_kb(url=url)
 
         try:
-            if video_kb:
-                await message.answer_video(video=video_file, caption=video_caption, reply_markup=video_kb, parse_mode="HTML")
-            else:
-                await message.answer_video(video=video_file, caption=None)
+            await message.answer_video(
+                video=video_file,
+                caption=video_caption,
+                reply_markup=video_kb,
+                width=v_width,
+                height=v_height,
+                duration=v_duration,
+                supports_streaming=True,
+                parse_mode="HTML"
+            )
         except Exception as vid_err:
             print(f"Answer video err: {vid_err}")
-            await message.answer_video(video=video_file, caption=None)
+            await message.answer_video(
+                video=video_file,
+                caption=None,
+                supports_streaming=True
+            )
+
 
         if not is_admin and not user.is_vip:
             await increment_video_count(telegram_id, username)
